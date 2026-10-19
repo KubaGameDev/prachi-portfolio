@@ -18,9 +18,15 @@
   }
   function collect() {
     targets.forEach(t => {t.el.style.filter = t.original;}); defs.replaceChildren();
-    targets = [...document.querySelectorAll('.site-header,.masthead-text,.page-header,.project-module-text,.cover-image img,.project-module img')]
-      .filter(el => {const r = el.getBoundingClientRect(); return r.width && r.height && r.bottom > 0 && r.top < innerHeight;})
-      .slice(0, 20).map((el, i) => {
+    // Refract each complete panel, including its background, image and hover layer.
+    // Gallery tiles stay independent so a long gallery never becomes one huge filter.
+    const candidates = [...document.querySelectorAll(
+      '.site-header,.masthead,.page-header,.project-cover,.grid__item-container,.project-module'
+    )].filter(el => !el.matches('.project-module') || !el.querySelector('.grid__item-container'));
+    const panels = candidates.filter(el => !candidates.some(parent => parent !== el && parent.contains(el)));
+    targets = panels
+      .filter(el => {const r = el.getBoundingClientRect(); return r.width && r.height && r.bottom > 0 && r.top < innerHeight && r.right > 0 && r.left < innerWidth;})
+      .map((el, i) => {
         const rect = el.getBoundingClientRect();
         const filter = document.createElementNS(ns, 'filter');
         filter.id = `pond-${i}`;
