@@ -1,0 +1,11 @@
+{
+  "html_pages": 19,
+  "reachable_from_home": 19,
+  "missing_local_references": [],
+  "automatic_external_resource_references": [],
+  "javascript_syntax": "passed",
+  "image_integrity": "249 published image files verified",
+  "video_integrity": "24 MP4 files verified with ffprobe",
+  "browser_rendering": "not verified: browser security policy blocked local file navigation",
+  "offline_playback_and_interactions": "not browser tested"
+}

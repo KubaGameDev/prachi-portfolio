@@ -1,0 +1,181 @@
+{
+  "captured_date": "2026-10-19",
+  "pages": {
+    "https://prachigaur.com/": "index.html",
+    "https://prachigaur.com/about": "about.html",
+    "https://prachigaur.com/portfolio": "portfolio.html",
+    "https://prachigaur.com/gallery": "gallery.html",
+    "https://prachigaur.com/portfolio-2024": "portfolio-2024.html",
+    "https://prachigaur.com/infinity27-3d-skills-bootcamp-art-strand": "infinity27-3d-skills-bootcamp-art-strand.html",
+    "https://prachigaur.com/concept-art-portfolio": "concept-art-portfolio.html",
+    "https://prachigaur.com/3d-product-visualization-project": "3d-product-visualization-project.html",
+    "https://prachigaur.com/my-favorite-illustrations": "my-favorite-illustrations.html",
+    "https://prachigaur.com/final-project-2d-game-design": "final-project-2d-game-design.html",
+    "https://prachigaur.com/3d-game-design": "3d-game-design.html",
+    "https://prachigaur.com/experimental-motion-graphics": "experimental-motion-graphics.html",
+    "https://prachigaur.com/vfx-compositing": "vfx-compositing.html",
+    "https://prachigaur.com/stop-motion-animation": "stop-motion-animation.html",
+    "https://prachigaur.com/cut-out-animation": "cut-out-animation.html",
+    "https://prachigaur.com/motion-graphics": "motion-graphics.html",
+    "https://prachigaur.com/illustrations-procreate-ipad": "illustrations-procreate-ipad.html",
+    "https://prachigaur.com/1st-year-university": "1st-year-university.html",
+    "https://prachigaur.com/contact": "contact.html"
+  },
+  "downloaded_images": 249,
+  "local_videos": 24,
+  "external_viewers": 1,
+  "media": [
+    {
+      "page": "infinity27-3d-skills-bootcamp-art-strand.html",
+      "viewer": "https://sketchfab.com/models/45c241198357423e9f507c720d2bd280/embed",
+      "status": "online-viewer-only",
+      "file": null
+    },
+    {
+      "page": "concept-art-portfolio.html",
+      "viewer": "https://www-ccv.adobe.io/v1/player/ccv/977VRi6DSaU/embed?bgcolor=%23191919&lazyLoading=true&api_key=BehancePro2View",
+      "status": "saved-local-video",
+      "file": "assets/video/977VRi6DSaU_576-746c5bbafcff.mp4"
+    },
+    {
+      "page": "concept-art-portfolio.html",
+      "viewer": "https://www-ccv.adobe.io/v1/player/ccv/CSCfGmdpqE2/embed?bgcolor=%23191919&lazyLoading=true&api_key=BehancePro2View",
+      "status": "saved-local-video",
+      "file": "assets/video/CSCfGmdpqE2_576-d3f6b3e749f3.mp4"
+    },
+    {
+      "page": "concept-art-portfolio.html",
+      "viewer": "https://www-ccv.adobe.io/v1/player/ccv/G4YEIBF6858/embed?bgcolor=%23191919&lazyLoading=true&api_key=BehancePro2View",
+      "status": "saved-local-video",
+      "file": "assets/video/G4YEIBF6858_576-2b7579a6ff3c.mp4"
+    },
+    {
+      "page": "3d-product-visualization-project.html",
+      "viewer": "https://www-ccv.adobe.io/v1/player/ccv/QryJpdRoINW/embed?bgcolor=%23191919&lazyLoading=true&api_key=BehancePro2View",
+      "status": "saved-local-video",
+      "file": "assets/video/QryJpdRoINW_576-8c396b1a4f34.mp4"
+    },
+    {
+      "page": "3d-product-visualization-project.html",
+      "viewer": "https://www-ccv.adobe.io/v1/player/ccv/Fbwum4zvgpG/embed?bgcolor=%23191919&lazyLoading=true&api_key=BehancePro2View",
+      "status": "saved-local-video",
+      "file": "assets/video/Fbwum4zvgpG_576-2e858908b394.mp4"
+    },
+    {
+      "page": "3d-product-visualization-project.html",
+      "viewer": "https://www-ccv.adobe.io/v1/player/ccv/9sn-Za3wtkM/embed?bgcolor=%23191919&lazyLoading=true&api_key=BehancePro2View",
+      "status": "saved-local-video",
+      "file": "assets/video/9sn-Za3wtkM_576-250bdd90337b.mp4"
+    },
+    {
+      "page": "3d-product-visualization-project.html",
+      "viewer": "https://www-ccv.adobe.io/v1/player/ccv/SCRpWHgAQHM/embed?bgcolor=%23191919&lazyLoading=true&api_key=BehancePro2View",
+      "status": "saved-local-video",
+      "file": "assets/video/SCRpWHgAQHM_576-f2caaf31c592.mp4"
+    },
+    {
+      "page": "3d-product-visualization-project.html",
+      "viewer": "https://www-ccv.adobe.io/v1/player/ccv/8c4o_z77cI9/embed?bgcolor=%23191919&lazyLoading=true&api_key=BehancePro2View",
+      "status": "saved-local-video",
+      "file": "assets/video/8c4o_z77cI9_576-bf57e4b9206e.mp4"
+    },
+    {
+      "page": "final-project-2d-game-design.html",
+      "viewer": "https://www-ccv.adobe.io/v1/player/ccv/CXZet7xUdEB/embed?bgcolor=%23191919&lazyLoading=true&api_key=BehancePro2View",
+      "status": "saved-local-video",
+      "file": "assets/video/CXZet7xUdEB_576-4d67a4d2a92d.mp4"
+    },
+    {
+      "page": "final-project-2d-game-design.html",
+      "viewer": "https://www-ccv.adobe.io/v1/player/ccv/Uiqbnu-APSS/embed?bgcolor=%23191919&lazyLoading=true&api_key=BehancePro2View",
+      "status": "saved-local-video",
+      "file": "assets/video/Uiqbnu-APSS_576-5a53b029e55d.mp4"
+    },
+    {
+      "page": "final-project-2d-game-design.html",
+      "viewer": "https://www-ccv.adobe.io/v1/player/ccv/VsSyycPzEqy/embed?bgcolor=%23191919&lazyLoading=true&api_key=BehancePro2View",
+      "status": "saved-local-video",
+      "file": "assets/video/VsSyycPzEqy_576-3266eda6bc73.mp4"
+    },
+    {
+      "page": "final-project-2d-game-design.html",
+      "viewer": "https://www-ccv.adobe.io/v1/player/ccv/SCH3ZuVeTzg/embed?bgcolor=%23191919&lazyLoading=true&api_key=BehancePro2View",
+      "status": "saved-local-video",
+      "file": "assets/video/SCH3ZuVeTzg_576-162a24610487.mp4"
+    },
+    {
+      "page": "final-project-2d-game-design.html",
+      "viewer": "https://www-ccv.adobe.io/v1/player/ccv/9z4ixX2_64s/embed?bgcolor=%23191919&lazyLoading=true&api_key=BehancePro2View",
+      "status": "saved-local-video",
+      "file": "assets/video/9z4ixX2_64s_576-34927aa3c099.mp4"
+    },
+    {
+      "page": "final-project-2d-game-design.html",
+      "viewer": "https://www-ccv.adobe.io/v1/player/ccv/KfFxDBwQo85/embed?bgcolor=%23191919&lazyLoading=true&api_key=BehancePro2View",
+      "status": "saved-local-video",
+      "file": "assets/video/KfFxDBwQo85_576-c6155ce61793.mp4"
+    },
+    {
+      "page": "final-project-2d-game-design.html",
+      "viewer": "https://www-ccv.adobe.io/v1/player/ccv/FgoHA_Yw8d2/embed?bgcolor=%23191919&lazyLoading=true&api_key=BehancePro2View",
+      "status": "saved-local-video",
+      "file": "assets/video/FgoHA_Yw8d2_576-b0481f63534c.mp4"
+    },
+    {
+      "page": "final-project-2d-game-design.html",
+      "viewer": "https://www-ccv.adobe.io/v1/player/ccv/BwCvoNURUat/embed?bgcolor=%23191919&lazyLoading=true&api_key=BehancePro2View",
+      "status": "saved-local-video",
+      "file": "assets/video/BwCvoNURUat_576-2720ee9670f4.mp4"
+    },
+    {
+      "page": "3d-game-design.html",
+      "viewer": "https://www-ccv.adobe.io/v1/player/ccv/Sg-oFobYMw2/embed?bgcolor=%23191919&lazyLoading=true&api_key=BehancePro2View",
+      "status": "saved-local-video",
+      "file": "assets/video/Sg-oFobYMw2_576-195b5b4473ac.mp4"
+    },
+    {
+      "page": "experimental-motion-graphics.html",
+      "viewer": "https://www-ccv.adobe.io/v1/player/ccv/A_zA66VkT6o/embed?bgcolor=%23191919&lazyLoading=true&api_key=BehancePro2View",
+      "status": "saved-local-video",
+      "file": "assets/video/A_zA66VkT6o_576-702f17f9a062.mp4"
+    },
+    {
+      "page": "vfx-compositing.html",
+      "viewer": "https://www-ccv.adobe.io/v1/player/ccv/RFrnRgRdbxI/embed?bgcolor=%23191919&lazyLoading=true&api_key=BehancePro2View",
+      "status": "saved-local-video",
+      "file": "assets/video/RFrnRgRdbxI_576-fbc60647e3e0.mp4"
+    },
+    {
+      "page": "stop-motion-animation.html",
+      "viewer": "https://www-ccv.adobe.io/v1/player/ccv/Mdf5trkZxp8/embed?bgcolor=%23191919&lazyLoading=true&api_key=BehancePro2View",
+      "status": "saved-local-video",
+      "file": "assets/video/Mdf5trkZxp8_576-279a4f8c475b.mp4"
+    },
+    {
+      "page": "cut-out-animation.html",
+      "viewer": "https://www-ccv.adobe.io/v1/player/ccv/PWRL5FJX94N/embed?bgcolor=%23191919&lazyLoading=true&api_key=BehancePro2View",
+      "status": "saved-local-video",
+      "file": "assets/video/PWRL5FJX94N_360-c95234e3a8a3.mp4"
+    },
+    {
+      "page": "motion-graphics.html",
+      "viewer": "https://www-ccv.adobe.io/v1/player/ccv/JaTRxgXB9kw/embed?bgcolor=%23191919&lazyLoading=true&api_key=BehancePro2View",
+      "status": "saved-local-video",
+      "file": "assets/video/JaTRxgXB9kw_576-f734459c9615.mp4"
+    },
+    {
+      "page": "illustrations-procreate-ipad.html",
+      "viewer": "https://www-ccv.adobe.io/v1/player/ccv/BENn6ubZT8N/embed?bgcolor=%23191919&lazyLoading=true&api_key=BehancePro2View",
+      "status": "saved-local-video",
+      "file": "assets/video/BENn6ubZT8N_576-c513305792cc.mp4"
+    },
+    {
+      "page": "illustrations-procreate-ipad.html",
+      "viewer": "https://www-ccv.adobe.io/v1/player/ccv/FL-ojuH5C5V/embed?bgcolor=%23191919&lazyLoading=true&api_key=BehancePro2View",
+      "status": "saved-local-video",
+      "file": "assets/video/FL-ojuH5C5V_576-c69bbae10327.mp4"
+    }
+  ],
+  "asset_failures": [],
+  "contact_form": "disabled; no messages can be sent"
+}
