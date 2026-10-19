@@ -1,61 +1,86 @@
-/* A tapered, elastic ink ribbon. Leaves the native pointer and links usable. */
+/* Local refraction: neutral displacement outside expanding pointer ripples. */
 (() => {
-  const motion = matchMedia('(prefers-reduced-motion: reduce)');
-  const pointer = matchMedia('(hover: hover) and (pointer: fine)');
-  const canvas = document.createElement('canvas');
-  canvas.className = 'liquid-cursor-trail';
-  canvas.setAttribute('aria-hidden', 'true');
-  const ctx = canvas.getContext('2d');
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)');
+  const fine = matchMedia('(hover: hover) and (pointer: fine)');
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.style.cssText = 'position:absolute;width:0;height:0;pointer-events:none';
+  const defs = document.createElementNS(ns, 'defs'); svg.append(defs); document.body.append(svg);
+  const map = document.createElement('canvas');
+  const ctx = map.getContext('2d');
   if (!ctx) return;
-  let points = [], frame = 0, lastMove = 0, previous = 0;
-  let target = { x: 0, y: 0 };
-  const enabled = () => !motion.matches && pointer.matches && !document.hidden;
-  function resize() {
-    const scale = Math.min(devicePixelRatio || 1, 2);
-    canvas.width = Math.round(innerWidth * scale);
-    canvas.height = Math.round(innerHeight * scale);
-    ctx.setTransform(scale, 0, 0, scale, 0, 0);
-    points = [];
+  let waves = [], targets = [], frame = 0, lastFrame = 0, lastPoint = null;
+  const allowed = () => fine.matches && !reduced.matches && !document.hidden && !document.body.classList.contains('local-nav-open');
+  function reset() {
+    cancelAnimationFrame(frame); frame = 0; waves = []; lastPoint = null;
+    targets.forEach(t => {t.el.style.filter = t.original;}); targets = []; defs.replaceChildren();
   }
-  function clear() {
-    cancelAnimationFrame(frame); frame = 0; points = []; previous = 0;
-    ctx.clearRect(0, 0, innerWidth, innerHeight);
+  function collect() {
+    targets.forEach(t => {t.el.style.filter = t.original;}); defs.replaceChildren();
+    targets = [...document.querySelectorAll('.site-header,.masthead-text,.page-header,.project-module-text,.cover-image img,.project-module img')]
+      .filter(el => {const r = el.getBoundingClientRect(); return r.width && r.height && r.bottom > 0 && r.top < innerHeight;})
+      .slice(0, 20).map((el, i) => {
+        const rect = el.getBoundingClientRect();
+        const filter = document.createElementNS(ns, 'filter');
+        filter.id = `pond-${i}`;
+        for (const [key, value] of Object.entries({filterUnits:'userSpaceOnUse',primitiveUnits:'userSpaceOnUse',x:0,y:0,width:rect.width,height:rect.height,'color-interpolation-filters':'sRGB'})) filter.setAttribute(key,value);
+        const source = document.createElementNS(ns,'feImage');
+        for (const [key,value] of Object.entries({x:-rect.left,y:-rect.top,width:innerWidth,height:innerHeight,preserveAspectRatio:'none',result:'ripples'})) source.setAttribute(key,value);
+        const displacement = document.createElementNS(ns,'feDisplacementMap');
+        for (const [key,value] of Object.entries({in:'SourceGraphic',in2:'ripples',scale:18,xChannelSelector:'R',yChannelSelector:'G'})) displacement.setAttribute(key,value);
+        filter.append(source,displacement); defs.append(filter);
+        return {el,rect,source,id:filter.id,original:el.style.filter};
+      });
   }
   function draw(now) {
     frame = 0;
-    if (!enabled()) { clear(); return; }
-    const step = Math.min((now - (previous || now - 16.67)) / 16.67, 2);
-    previous = now;
-    ctx.clearRect(0, 0, innerWidth, innerHeight);
-    const fade = Math.max(0, 1 - Math.max(0, now - lastMove - 80) / 650);
-    if (!fade || !points.length) { clear(); return; }
-    points.forEach((p, i) => {
-      const leader = i ? points[i - 1] : target;
-      const follow = 1 - Math.pow(i ? 0.68 : 0.48, step);
-      p.x += (leader.x - p.x) * follow;
-      p.y += (leader.y - p.y) * follow;
-    });
-    // Overlapping rounded segments merge into a liquid, speed-stretched ribbon.
-    ctx.lineCap = 'round';
-    for (let i = points.length - 1; i > 0; i--) {
-      const t = 1 - i / points.length;
-      ctx.strokeStyle = `hsla(${275 + i * 3}, 68%, 65%, ${fade * t * 0.55})`;
-      ctx.lineWidth = (2 + 22 * Math.sin(t * Math.PI * 0.85)) * fade;
-      ctx.beginPath(); ctx.moveTo(points[i].x, points[i].y);
-      ctx.lineTo(points[i - 1].x, points[i - 1].y); ctx.stroke();
+    if (!allowed()) {reset();return;}
+    if (now-lastFrame < 32) {frame=requestAnimationFrame(draw);return;}
+    lastFrame=now; waves=waves.filter(w=>now-w.time<950);
+    if (!waves.length) {reset();return;}
+    const scale=.4, width=Math.ceil(innerWidth*scale),height=Math.ceil(innerHeight*scale);
+    if(map.width!==width||map.height!==height){map.width=width;map.height=height;}
+    const pixels=ctx.createImageData(width,height), data=pixels.data;
+    for(let i=0;i<data.length;i+=4){data[i]=128;data[i+1]=128;data[i+2]=128;data[i+3]=255;}
+    for(const wave of waves){
+      const age=(now-wave.time)/950, radius=8+age*90, extent=radius+22;
+      const left=Math.max(0,Math.floor((wave.x-extent)*scale)),right=Math.min(width,Math.ceil((wave.x+extent)*scale));
+      const top=Math.max(0,Math.floor((wave.y-extent)*scale)),bottom=Math.min(height,Math.ceil((wave.y+extent)*scale));
+      for(let y=top;y<bottom;y++) for(let x=left;x<right;x++){
+        const dx=x/scale-wave.x,dy=y/scale-wave.y,d=Math.hypot(dx,dy);
+        if(d<1)continue;
+        const envelope=Math.exp(-Math.pow((d-radius)/16,2));
+        const force=Math.sin((d-radius)/5)*envelope*Math.pow(1-age,2)*36;
+        const i=(y*width+x)*4;
+        data[i]+=force*dx/d;data[i+1]+=force*dy/d;
+      }
     }
-    frame = requestAnimationFrame(draw);
+    ctx.putImageData(pixels,0,0);
+    const url=map.toDataURL();
+    targets.forEach(t=>{t.source.setAttribute('href',url);t.el.style.filter=`url(#${t.id})`;});
+    frame=requestAnimationFrame(draw);
   }
-  document.addEventListener('pointermove', event => {
-    if (!enabled() || event.pointerType === 'touch') return;
-    target = {x: event.clientX, y: event.clientY}; lastMove = performance.now();
-    if (!points.length) points = Array.from({length: 28}, () => ({...target}));
-    if (!frame) frame = requestAnimationFrame(draw);
-  }, {passive: true});
-  document.documentElement.addEventListener('pointerleave', clear);
-  window.addEventListener('blur', clear);
-  document.addEventListener('visibilitychange', clear);
-  motion.addEventListener('change', clear); pointer.addEventListener('change', clear);
-  window.addEventListener('resize', resize, {passive: true});
-  document.body.append(canvas); resize();
+  document.addEventListener('pointermove',event=>{
+    if(!allowed()||event.pointerType==='touch')return;
+    const samples=event.getCoalescedEvents ? event.getCoalescedEvents() : [event];
+    for(const p of samples.length?samples:[event]){
+      const point={x:p.clientX,y:p.clientY};
+      const distance=lastPoint?Math.hypot(point.x-lastPoint.x,point.y-lastPoint.y):0;
+      const count=Math.max(1,Math.ceil(distance/12));
+      for(let i=1;i<=Math.min(count,24);i++){
+        const t=i/Math.min(count,24);
+        waves.push({x:lastPoint?lastPoint.x+(point.x-lastPoint.x)*t:point.x,y:lastPoint?lastPoint.y+(point.y-lastPoint.y)*t:point.y,time:performance.now()});
+      }
+      lastPoint=point;
+    }
+    waves=waves.slice(-48);
+    if(!frame){collect();frame=requestAnimationFrame(draw);}
+  },{passive:true});
+  window.addEventListener('resize',reset,{passive:true});
+  window.addEventListener('scroll',reset,{passive:true});
+  window.addEventListener('blur',reset);
+  document.documentElement.addEventListener('pointerleave',reset);
+  document.addEventListener('visibilitychange',reset);
+  reduced.addEventListener('change',reset);fine.addEventListener('change',reset);
 })();

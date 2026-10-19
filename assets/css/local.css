@@ -36,7 +36,11 @@ body.transition-enabled{opacity:1!important}
 .site-header .nav-container>div{float:none;display:block;margin:0;padding:0;line-height:1.4}
 .site-header .nav-container a{display:block;margin:0;padding:0;white-space:nowrap;line-height:1.4}
 .page-header .title,.page-header .description,.page-header .date,.page-header .custom1,.page-header .custom2{text-align:center}
-.liquid-cursor-trail{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:99999;opacity:.65}
 @media(min-width:933px) and (max-width:1200px){.site-header{flex-direction:column;gap:18px}.site-header .logo{text-align:center}.site-header .nav-container{justify-content:center;flex:none}}
 @media(max-width:932px){.site-header{min-height:90px;padding:20px 44px 20px 0}.site-header .nav-container{display:none}.site-header .logo-wrap{width:100%}.site-header .logo{font-size:clamp(23px,5vw,36px);text-align:left}.site-header .hamburger-click-area{right:0;padding:20px 0 20px 20px}}
-@media(prefers-reduced-motion:reduce),(pointer:coarse){.liquid-cursor-trail{display:none}}
+/* The exported theme hides nav separately from its overlay. */
+.local-nav-open .responsive-nav nav{display:block!important}
+.local-nav-open .responsive-nav{background:#fff;inset:0;z-index:1000001}
+.local-nav-open .responsive-nav__contents{width:100%;margin:auto}
+.local-nav-open .responsive-nav nav a{display:block;color:#191919;padding:10px;font-size:22px;line-height:1.5}
+.local-nav-open .close-responsive-click-area{z-index:2}
