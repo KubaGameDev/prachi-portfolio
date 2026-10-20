@@ -55,10 +55,10 @@
       entries.forEach(entry => {
         if (entry.isIntersecting) {entry.target.classList.add('is-revealed');observer.unobserve(entry.target);}
       });
-    }, {rootMargin:'0px 0px -24px 0px',threshold:0});
+    }, {rootMargin:'0px 0px -12% 0px',threshold:0.08});
     panels.forEach(panel => {
       panel.classList.add('motion-panel');
-      if (panel.getBoundingClientRect().top < innerHeight - 24) panel.classList.add('is-revealed');
+      if (panel.getBoundingClientRect().top < 80) panel.classList.add('is-revealed');
       else {panel.classList.add('reveal-pending');observer.observe(panel);}
       panel.addEventListener('focusin',()=>{panel.classList.add('is-revealed');observer.unobserve(panel);});
     });

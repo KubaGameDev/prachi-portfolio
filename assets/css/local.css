@@ -84,14 +84,15 @@ a:focus-visible,[role=button]:focus-visible,button:focus-visible{outline:2px sol
  .contact-page .project-module-image{max-width:320px;margin:12px auto 0}
 }
 /* Animate children, leaving panel geometry stable for pointer refraction. */
-.motion-panel{--reveal-image-x:-36px;--reveal-caption-x:36px}
-.motion-panel:nth-child(even){--reveal-image-x:36px;--reveal-caption-x:-36px}
-.motion-panel>.cover-image-wrap,.motion-panel>.details-wrap{transition:translate .65s cubic-bezier(.2,.7,.2,1),opacity .65s ease}
-.motion-panel>.details-wrap{transition-delay:80ms}
+.motion-panel{--reveal-image-x:-96px;--reveal-caption-x:96px}
+.motion-panel:nth-child(even){--reveal-image-x:96px;--reveal-caption-x:-96px}
+.motion-panel>.cover-image-wrap,.motion-panel>.details-wrap{transition:translate .9s cubic-bezier(.2,.7,.2,1),opacity .75s ease}
+.motion-panel>.details-wrap{transition-delay:120ms}
 .reveal-pending:not(.is-revealed)>.cover-image-wrap{translate:var(--reveal-image-x) 0;opacity:0}
 .reveal-pending:not(.is-revealed)>.details-wrap{translate:var(--reveal-caption-x) 0;opacity:0}
 @media(max-width:932px){
- .reveal-pending:not(.is-revealed)>.cover-image-wrap,.reveal-pending:not(.is-revealed)>.details-wrap{translate:0 18px}
+ .motion-panel{--reveal-image-x:-32px;--reveal-caption-x:32px}
+ .motion-panel:nth-child(even){--reveal-image-x:32px;--reveal-caption-x:-32px}
 }
 @media(prefers-reduced-motion:reduce){
  .motion-panel>.cover-image-wrap,.motion-panel>.details-wrap{translate:none!important;opacity:1!important;transition:none!important}
@@ -102,3 +103,6 @@ a:focus-visible,[role=button]:focus-visible,button:focus-visible{outline:2px sol
  .contact-page .tree-child-wrapper{flex:none!important;width:100%!important}
 }
 .local-nav-open .responsive-nav{transition:opacity .2s ease,visibility 0s}
+
+/* Clip horizontal reveal travel without introducing a scroll container. */
+.project-covers{overflow-x:clip}
