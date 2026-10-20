@@ -8,7 +8,14 @@ const output = process.env.OCEAN_SCREENSHOTS || '/private/tmp';
 (async () => {
   const browser = await chromium.launch({ executablePath, headless: true });
   const errors = [];
-  const desktop = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const baselineContext = async options => {
+    const context = await browser.newContext(options);
+    await context.addInitScript(() => {
+      try { sessionStorage.setItem('prachi-ocean-guide-v1', 'seen'); } catch (_) {}
+    });
+    return context;
+  };
+  const desktop = await baselineContext({ viewport: { width: 1440, height: 900 } });
   const page = await desktop.newPage();
   page.on('pageerror', error => errors.push(error.message));
   const y = page => page.evaluate(() => Ocean.scrollElement.scrollTop);
@@ -54,7 +61,7 @@ const output = process.env.OCEAN_SCREENSHOTS || '/private/tmp';
   await page.waitForTimeout(800);
   assert.ok(await y(page) >= 890);
 
-  const mobile = await browser.newContext({
+  const mobile = await baselineContext({
     viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1
   });
   const phone = await mobile.newPage();
@@ -83,12 +90,16 @@ const output = process.env.OCEAN_SCREENSHOTS || '/private/tmp';
   assert.ok(await y(phone) > 800, '100px upward touch should dive');
   const geometry = await phone.evaluate(() => ({
     port: Ocean.scrollElement.getBoundingClientRect().toJSON(),
-    dock: document.querySelector('.ocean-companion').getBoundingClientRect().toJSON(),
-    width: innerWidth, scrollWidth: Ocean.scrollElement.scrollWidth
+    lane: document.querySelector('.ocean-companion').getBoundingClientRect().toJSON(),
+    content: document.querySelector('.site-content').getBoundingClientRect().toJSON(),
+    height: innerHeight, clientWidth: Ocean.scrollElement.clientWidth,
+    scrollWidth: Ocean.scrollElement.scrollWidth
   }));
-  assert.ok(geometry.port.bottom <= geometry.dock.top + 1, 'dock must be outside the content viewport');
-  assert.ok(geometry.dock.height >= 72, 'mobile dock reserves 72px');
-  assert.equal(geometry.scrollWidth, geometry.width, 'mobile page has no horizontal overflow');
+  assert.ok(geometry.content.right <= geometry.lane.left + 1, 'content reserves the companion side lane');
+  assert.ok(geometry.lane.width >= 72, 'mobile companion lane reserves at least 72px');
+  assert.ok(Math.abs(geometry.lane.height - geometry.height) <= 1, 'mobile companion lane uses the viewport height');
+  assert.ok(Math.abs(geometry.port.bottom - geometry.height) <= 1, 'mobile reading viewport keeps its full height');
+  assert.ok(geometry.scrollWidth <= geometry.clientWidth + 1, 'mobile page has no horizontal overflow');
   await phone.screenshot({ path: `${output}/ocean-mobile-underwater.png` });
   await phone.locator('.js-hamburger').click();
   assert.equal(await phone.evaluate(() => Ocean.isPaused() && Ocean.scrollElement.inert), true);
@@ -103,7 +114,7 @@ const output = process.env.OCEAN_SCREENSHOTS || '/private/tmp';
   await phone.waitForFunction(() => !Ocean.isPaused());
   assert.equal(await phone.evaluate(() => Ocean.isPaused()), false);
 
-  const reduced = await browser.newContext({ reducedMotion: 'reduce', viewport: { width: 390, height: 844 } });
+  const reduced = await baselineContext({ reducedMotion: 'reduce', viewport: { width: 390, height: 844 } });
   const quiet = await reduced.newPage();
   await quiet.goto(base); await ready(quiet);
   assert.equal(await quiet.evaluate(() => Ocean.effectsEnabled()), false);
@@ -111,7 +122,7 @@ const output = process.env.OCEAN_SCREENSHOTS || '/private/tmp';
   await quiet.locator('#ocean-dive-link').click();
   assert.ok(await y(quiet) > 800, 'reduced-motion dive jumps directly');
 
-  const plain = await browser.newContext({ javaScriptEnabled: false });
+  const plain = await baselineContext({ javaScriptEnabled: false });
   const nojs = await plain.newPage();
   await nojs.goto(base);
   await nojs.locator('#ocean-dive-link').click();
@@ -123,5 +134,5 @@ const output = process.env.OCEAN_SCREENSHOTS || '/private/tmp';
   assert.ok(await nojs.evaluate(() => scrollY) > 0, 'no-JavaScript anchor remains usable');
   assert.deepEqual(errors, [], 'no browser runtime errors');
   await browser.close();
-  console.log('PASS: desktop wheel/game/pause, mobile touch/dock/navigation/lightbox, reduced motion, no-JavaScript fallback.');
+  console.log('PASS: desktop wheel/game/pause, mobile touch/side-lane/navigation/lightbox, reduced motion, no-JavaScript fallback.');
 })().catch(error => { console.error(error); process.exit(1); });

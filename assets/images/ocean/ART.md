@@ -1,5 +1,12 @@
 # Flo artwork provenance
 
+The six-pose sheets below remain as the fall/resurface artwork and loading fallbacks.
+The current runtime also uses [the companion animation](COMPANION-ANIMATION.md) and
+[the balance animation](BALANCE-ANIMATION.md), created from the expanded
+`Consistency ref` library. That library is preserved and inventoried in
+`../../../docs/flo-reference-library.md`. All four runtime WebP sheets total
+1,288,714 bytes (about 1.23 MiB).
+
 Recreated with the built-in image-generation tool on 20 October 2026 from the user's supplied Flo reference sheets in the repository's sibling `mermaid assets` folder.
 
 Reference sheets:

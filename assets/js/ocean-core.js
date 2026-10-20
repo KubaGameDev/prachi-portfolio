@@ -21,7 +21,11 @@
     WHEEL_DISTANCE: 80,
     WHEEL_GAP_MS: 200,
     WHEEL_VERTICAL_RATIO: 1.2,
-    WHEEL_LINE_PX: 16
+    WHEEL_LINE_PX: 16,
+    TILT_DEADZONE_DEGREES: 2,
+    TILT_RANGE_DEGREES: 18,
+    TILT_SMOOTHING_MS: 100,
+    TILT_STALE_MS: 500
   });
 
   function clamp(value, minimum, maximum) {
@@ -47,6 +51,71 @@
     var catching = tilt * correction < -0.04 || tilt * speed < -0.06;
     return { pose: catching ? 'catch' : 'lean', direction: direction, weight: weight };
   }
+
+  /**
+   * Screen-relative lateral tilt reconstructed from gravity, rather than raw
+   * Euler gamma (which can change branches when a phone is nearly upright).
+   * W3C Z-X'-Y'' orientation gives gravity's device components:
+   * [-cos(beta)sin(gamma), sin(beta), cos(beta)cos(gamma)].
+   * https://www.w3.org/TR/orientation-event/#device-orientation
+   * Screen angles are counterclockwise from the device's natural orientation:
+   * https://www.w3.org/TR/screen-orientation/#the-current-screen-orientation-type-and-angle
+   */
+  function TiltInput() {
+    this.calibrate();
+  }
+
+  TiltInput.prototype.calibrate = function () {
+    this.calibrated = false;
+    this.neutral = null;
+    this.screenAngle = null;
+    this.lastSampleTime = null;
+    this.input = 0;
+  };
+
+  TiltInput.prototype.read = function (nowMs) {
+    if (!this.calibrated || !Number.isFinite(nowMs) ||
+        nowMs < this.lastSampleTime ||
+        nowMs - this.lastSampleTime > constants.TILT_STALE_MS) return 0;
+    return this.input;
+  };
+
+  TiltInput.prototype.sample = function (beta, gamma, screenAngle, nowMs) {
+    // Do not coerce unavailable sensor readings (notably null) into zero degrees,
+    // and do not extend the freshness window with missing or out-of-order data.
+    if (!Number.isFinite(beta) || !Number.isFinite(gamma) ||
+        !Number.isFinite(screenAngle) || !Number.isFinite(nowMs) ||
+        (this.lastSampleTime !== null && nowMs < this.lastSampleTime)) {
+      return { valid: false, calibrated: this.calibrated, input: this.read(nowMs) };
+    }
+    var angle = ((screenAngle % 360) + 360) % 360;
+    var radians = Math.PI / 180;
+    var b = beta * radians;
+    var g = gamma * radians;
+    var a = angle * radians;
+    // Positive means the screen's right edge tilts down: gamma+ in portrait,
+    // beta+ at screen angle 90, beta- at 270, and gamma- at 180.
+    var lateral = Math.cos(b) * Math.sin(g) * Math.cos(a) + Math.sin(b) * Math.sin(a);
+    var roll = Math.asin(clamp(lateral, -1, 1)) / radians;
+
+    if (!this.calibrated || angle !== this.screenAngle) {
+      this.neutral = roll;
+      this.screenAngle = angle;
+      this.lastSampleTime = nowMs;
+      this.input = 0;
+      this.calibrated = true;
+      return { valid: true, calibrated: true, input: 0 };
+    }
+
+    var deviation = roll - this.neutral;
+    var magnitude = clamp((Math.abs(deviation) - constants.TILT_DEADZONE_DEGREES) /
+      (constants.TILT_RANGE_DEGREES - constants.TILT_DEADZONE_DEGREES), 0, 1);
+    var target = magnitude === 0 ? 0 : (deviation < 0 ? -magnitude : magnitude);
+    var blend = 1 - Math.exp(-(nowMs - this.lastSampleTime) / constants.TILT_SMOOTHING_MS);
+    this.input = clamp(this.input + (target - this.input) * blend, -1, 1);
+    this.lastSampleTime = nowMs;
+    return { valid: true, calibrated: true, input: this.input };
+  };
 
   /**
    * Pure simulation. All durations are seconds; lean and input are normalized.
@@ -223,6 +292,7 @@
   return {
     BalanceGame: BalanceGame,
     getBalancePose: getBalancePose,
+    TiltInput: TiltInput,
     TouchIntent: TouchIntent,
     WheelIntent: WheelIntent,
     constants: constants

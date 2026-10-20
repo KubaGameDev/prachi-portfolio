@@ -24,6 +24,9 @@ async function main() {
     const context = await browser.newContext({
       viewport: { width: 1440, height: 900 }, ...options
     });
+    await context.addInitScript(() => {
+      try { sessionStorage.setItem('prachi-ocean-guide-v1', 'seen'); } catch (_) {}
+    });
     const page = await context.newPage();
     page.on('pageerror', error => runtimeErrors.push(`${name}: ${error.message}`));
     page.on('console', message => {

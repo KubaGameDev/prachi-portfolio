@@ -9,6 +9,7 @@
   const home = !!hero;
   const motion = matchMedia('(prefers-reduced-motion: reduce)');
   const narrow = matchMedia('(max-width:932px)');
+  const touchDevice = matchMedia('(any-pointer: coarse)');
   const clamp = (n, lo = 0, hi = 1) => Math.max(lo, Math.min(hi, n));
   const mix = (a, b, t) => a + (b - a) * t;
   const ease = t => t * t * (3 - 2 * t);
@@ -48,8 +49,12 @@
   toggle.innerHTML = '<span aria-hidden="true">Ⅱ</span><span>Pause motion</span>';
   shell.append(toggle);
   const game = new Core.BalanceGame();
+  const companion = window.FloMotion ? new window.FloMotion.Companion({
+    minY: 90, maxY: Math.max(90, innerHeight - 110), y: innerHeight * 0.56
+  }) : null;
   const touch = new Core.TouchIntent();
   const wheel = new Core.WheelIntent();
+  const tilt = new Core.TiltInput();
   const reasons = new Set();
   let pausedByUser = false;
   let playOptIn = false;
@@ -62,10 +67,19 @@
   let dive = null, wheelTail = null, historyTimer = 0, wakeTimer = 0;
   let lastState = 'ready', oldBest = 0, frameAverage = 16, slowFrames = 0;
   let quality = 1, viewportWidth = innerWidth, viewportHeight = innerHeight;
-  let mobileActorWidth = 180, mobileActorY = innerHeight * 0.62;
+  let surfaceActor = { x: innerWidth * 0.66, y: innerHeight * 0.5, width: 280 };
   let readingAnchor = null;
   let visualPose = { name: 'balance', direction: 1 };
   let previousPose = visualPose, poseBlend = 1;
+  let guideOpen = false, guideInitialized = false, guideSeen = false;
+  let guideTimer = 0, guideFadeTimer = 0;
+  let tiltEnabled = false, tiltListening = false, tiltHasReading = false;
+  let tiltPending = false, tiltAwaiting = false, tiltRequest = 0, tiltWatchdog = 0;
+  let lastSensorAt = 0;
+  let companionReady = false, lastScrollY = 0, pointerHeight = null;
+  let swimPhase = 0, companionFrame = 8, companionRotation = 0;
+  let balanceReady = false, recoveryTime = 0;
+  let companionPosition = { x: innerWidth - 56, y: innerHeight * 0.56, width: 112 };
   const pointers = new Set();
   const keys = new Set();
   const scoreEl = document.getElementById('ocean-score');
@@ -75,12 +89,26 @@
   const status = document.getElementById('ocean-status');
   const play = document.getElementById('ocean-play');
   const progress = document.getElementById('ocean-dive-progress');
+  const guide = document.getElementById('ocean-input-guide');
+  const help = document.getElementById('ocean-help');
+  const tiltButton = document.getElementById('ocean-enable-tilt');
+  const recenter = document.getElementById('ocean-recenter');
+  const useTouch = document.getElementById('ocean-use-touch');
+  const tiltFeedback = document.getElementById('ocean-tilt-feedback');
+  const touchInstructions = document.querySelector('.ocean-touch-instruction');
   const art = new Image();
   const correctionArt = new Image();
+  const companionArt = new Image();
+  const balanceArt = new Image();
+  const breathArt = new Image();
   art.decoding = 'async';
   correctionArt.decoding = 'async';
+  companionArt.decoding = 'async';
+  balanceArt.decoding = 'async';
+  breathArt.decoding = 'async';
   try { game.best = Math.max(0, Math.min(86400, Number(localStorage.getItem('prachi-ocean-best-v1')) || 0)); } catch (_) {}
   oldBest = game.best;
+  try { guideSeen = sessionStorage.getItem('prachi-ocean-guide-v1') === 'seen'; } catch (_) {}
 
   const isPaused = () => reasons.size > 0 || pausedByUser;
   const effectsEnabled = () => !isPaused() && !motion.matches;
@@ -97,7 +125,12 @@
   };
   const finalize = () => { game.finalise(); saveBest(); input = 0; keys.clear(); };
   function updateState() {
-    body.classList.toggle('ocean-paused', isPaused());
+    // At the surface the pause control scrolls with the complete game scene.
+    // A fixed viewport button would cover the HUD on short phone screens.
+    const toggleParent = home && !underwater ? hero : shell;
+    if (toggle.parentElement !== toggleParent) toggleParent.append(toggle);
+    body.classList.toggle('ocean-paused', reasons.size > 0 || pausedByUser);
+    body.classList.toggle('ocean-guiding', guideOpen);
     body.classList.toggle('ocean-static', motion.matches);
     body.classList.toggle('ocean-underwater', underwater);
     toggle.setAttribute('aria-pressed', String(pausedByUser));
@@ -111,6 +144,7 @@
     toggle.inert = reasons.size > 0;
     armed = armed && playable() && port.scrollTop <= 8 && !dive;
     hero?.classList.toggle('is-armed', armed);
+    syncTiltSensor();
     emit();
     wake();
   }
@@ -150,7 +184,13 @@
     getScroll: () => ({ x: port.scrollLeft, y: port.scrollTop }),
     getViewport, isPaused, effectsEnabled,
     isUnderwater: () => underwater,
-    setPaused, scrollTo
+    setPaused, scrollTo,
+    getCompanion: () => ({
+      ...companionPosition, targetY: companion?.targetY ?? companionPosition.y,
+      velocity: companion?.velocity || 0, state: companion?.state || 'resting',
+      frame: companionFrame
+    }),
+    getSurfGeometry: () => surfGeometry(clock)
   };
   function targetTop(el) {
     return el.getBoundingClientRect().top - port.getBoundingClientRect().top + port.scrollTop;
@@ -180,12 +220,14 @@
   }
   function beginDive(source, pushHash = true) {
     if (!home || dive || reasons.size) return;
+    closeGuide();
     finalize();
     armed = false;
     hero.classList.remove('is-armed');
     const now = performance.now();
     const duration = motion.matches || pausedByUser ? 0 : 600;
     dive = { from: port.scrollTop, to: targetTop(site), start: now, duration, source };
+    syncTiltSensor();
     if (pushHash && location.hash !== '#underwater') navigateHash('#underwater', site);
     if (source === 'wheel') wheelTail = { last: now, until: now + duration + 600, end: now + duration };
     if (source === 'touch') touchConsumed = true;
@@ -206,9 +248,17 @@
   }
   function onScroll() {
     const now = performance.now();
+    const scrollDelta = port.scrollTop - lastScrollY;
+    lastScrollY = port.scrollTop;
     const next = !home || port.scrollTop >= heroHeight * 0.58;
-    if (next !== underwater) { underwater = next; updateState(); }
+    if (next !== underwater) {
+      underwater = next;
+      if (underwater && companion && pointerHeight !== null && effectsEnabled()) companion.point(pointerHeight);
+      updateState();
+    }
+    if (underwater && effectsEnabled()) companion?.scroll(scrollDelta);
     if (home && port.scrollTop > 8) {
+      if (guideOpen) closeGuide();
       armed = false;
       hero.classList.remove('is-armed');
       if (!dive && game.state !== 'ready') finalize();
@@ -218,6 +268,7 @@
       clearTimeout(wakeTimer);
       wakeTimer = setTimeout(wake, 210);
     }
+    syncTiltSensor();
     clearTimeout(historyTimer);
     historyTimer = setTimeout(stashPosition, 180);
     if (!dive && underwater && innerWidth === viewportWidth && innerHeight === viewportHeight) {
@@ -235,7 +286,17 @@
     wake();
   }
   port.addEventListener('scroll', onScroll, { passive: true });
-  window.addEventListener('pagehide', () => { stashPosition(); finalize(); });
+  document.addEventListener('pointermove', event => {
+    if (event.pointerType === 'touch' || !event.isPrimary) return;
+    pointerHeight = event.clientY;
+    if (!underwater || !effectsEnabled()) return;
+    companion?.point(pointerHeight);
+    wake();
+  }, { passive: true });
+  window.addEventListener('pagehide', () => {
+    stashPosition(); finalize(); stopTiltSensor();
+    tiltRequest++; tiltPending = false;
+  });
   window.addEventListener('pageshow', event => {
     if (event.persisted) {
       reasons.delete('hidden'); reasons.delete('blur');
@@ -284,6 +345,173 @@
   document.addEventListener('webkitendfullscreen', () => setPaused('fullscreen', false), true);
 
   function setStatus(text) { if (status && status.textContent !== text) status.textContent = text; }
+  function markGuideSeen() {
+    guideSeen = true;
+    try { sessionStorage.setItem('prachi-ocean-guide-v1', 'seen'); } catch (_) {}
+  }
+  function feedback(text) {
+    if (!tiltFeedback) return;
+    tiltFeedback.hidden = !text;
+    tiltFeedback.textContent = text;
+  }
+  function tiltUnavailable() {
+    if (!window.isSecureContext) return 'Phone tilt needs a secure connection. Touch controls are ready to use.';
+    if (!window.DeviceOrientationEvent) return 'Phone tilt is not available in this browser. Use touch to balance.';
+    return '';
+  }
+  function updateInputControls() {
+    if (!home) return;
+    hero.dataset.input = tiltEnabled ? 'tilt' : 'touch';
+    if (tiltButton) {
+      tiltButton.disabled = !artReady || tiltPending || !!tiltUnavailable();
+      tiltButton.hidden = tiltEnabled && !tiltAwaiting;
+      tiltButton.textContent = tiltPending ? 'Waiting for permission…' :
+        tiltAwaiting ? 'Finding your balance…' : 'Enable phone tilt';
+    }
+    if (recenter) recenter.hidden = !tiltEnabled;
+    if (useTouch) useTouch.hidden = !tiltEnabled && !tiltPending;
+    if (touchInstructions) touchInstructions.textContent = tiltEnabled ?
+      'Tilt left / right to balance · Swipe up firmly to dive' :
+      'Slide your thumb to balance · Swipe up firmly to dive';
+  }
+  function showGuide() {
+    if (!guide || !home || port.scrollTop > 8 || dive || reasons.size) return;
+    clearTimeout(guideTimer);
+    clearTimeout(guideFadeTimer);
+    guideOpen = true;
+    guide.hidden = false;
+    guide.classList.remove('is-dissolving');
+    help?.setAttribute('aria-expanded', 'true');
+    markGuideSeen();
+    updateInputControls();
+    if (touchDevice.matches) feedback(tiltUnavailable());
+    updateState();
+    // The hint belongs to the scene: it never takes focus or interrupts play.
+    guideTimer = setTimeout(() => {
+      guide.classList.add('is-dissolving');
+      guideFadeTimer = setTimeout(() => closeGuide(), motion.matches ? 0 : 700);
+    }, 8000);
+  }
+  function closeGuide() {
+    clearTimeout(guideTimer);
+    clearTimeout(guideFadeTimer);
+    if (!guideOpen) return;
+    guideOpen = false;
+    guide.hidden = true;
+    guide.classList.remove('is-dissolving');
+    help?.setAttribute('aria-expanded', 'false');
+    updateState();
+  }
+  function stopTiltSensor() {
+    if (tiltListening) window.removeEventListener('deviceorientation', onOrientation);
+    tiltListening = false;
+    tiltHasReading = false;
+    clearTimeout(tiltWatchdog);
+    tilt.calibrate();
+  }
+  function disableTilt(message = '') {
+    tiltRequest++;
+    tiltPending = false; tiltAwaiting = false; tiltEnabled = false;
+    stopTiltSensor();
+    updateInputControls();
+    if (message) { feedback(message); setStatus(message); }
+  }
+  function sensorWatchdog() {
+    if (!tiltListening) return;
+    if (performance.now() - lastSensorAt >= 3000) {
+      disableTilt('No motion readings are arriving. You can slide your thumb to balance instead.');
+      finalize();
+      updateState();
+      return;
+    }
+    tiltWatchdog = setTimeout(sensorWatchdog, 1000);
+  }
+  function syncTiltSensor() {
+    const allowed = tiltEnabled && home && artReady && port.scrollTop <= 8 && !dive &&
+      !document.hidden && !pausedByUser && !reasons.size;
+    if (!allowed) {
+      if (tiltListening) stopTiltSensor();
+      return;
+    }
+    if (tiltListening) return;
+    tilt.calibrate();
+    tiltHasReading = false;
+    tiltListening = true;
+    lastSensorAt = performance.now();
+    window.addEventListener('deviceorientation', onOrientation, { passive: true });
+    tiltWatchdog = setTimeout(sensorWatchdog, 1000);
+  }
+  function screenAngle() {
+    const angle = window.screen.orientation?.angle ?? window.orientation ?? 0;
+    return Number.isFinite(angle) ? angle : 0;
+  }
+  function onOrientation(event) {
+    if (!tiltListening) return;
+    const now = performance.now();
+    const result = tilt.sample(event.beta, event.gamma, screenAngle(), now);
+    if (!result.valid) return;
+    const first = !tiltHasReading;
+    tiltHasReading = true;
+    lastSensorAt = now;
+    if (first) {
+      tiltAwaiting = false;
+      feedback('');
+      updateInputControls();
+      setStatus('Tilt gently left and right. This holding position is your center.');
+    } else if (Math.abs(result.input) > 0.08 && !touch.active) {
+      startGame();
+    }
+    wake();
+  }
+  async function enableTilt() {
+    if (tiltPending || !artReady) return;
+    const unavailable = tiltUnavailable();
+    if (unavailable) { feedback(unavailable); return; }
+    const request = ++tiltRequest;
+    tiltPending = true;
+    updateInputControls();
+    feedback('Allow motion access, then hold your phone in a comfortable position.');
+    try {
+      // iOS requires this call directly within the button's user activation.
+      const permission = typeof window.DeviceOrientationEvent.requestPermission === 'function' ?
+        await window.DeviceOrientationEvent.requestPermission() : 'granted';
+      if (request !== tiltRequest) return;
+      tiltPending = false;
+      if (permission !== 'granted') {
+        disableTilt('Motion access was not allowed. Touch controls still work.');
+        return;
+      }
+      playOptIn = true; pausedByUser = false;
+      tiltEnabled = true; tiltAwaiting = true;
+      input = 0; keys.clear();
+      feedback('Hold your phone comfortably for a moment…');
+      updateInputControls();
+      updateState();
+    } catch (_) {
+      if (request !== tiltRequest) return;
+      disableTilt('Motion access is unavailable. You can use touch controls instead.');
+    }
+  }
+  function recenterTilt() {
+    if (!tiltEnabled) return;
+    tilt.calibrate();
+    tiltHasReading = false;
+    game.velocity = 0;
+    game.overleanTime = 0;
+    setStatus('Hold your phone comfortably. Finding your new center…');
+    wake();
+  }
+  help?.addEventListener('click', showGuide);
+  tiltButton?.addEventListener('click', enableTilt);
+  useTouch?.addEventListener('click', () => {
+    disableTilt();
+    playOptIn = true; pausedByUser = false;
+    updateState();
+    setStatus('Slide your thumb left and right to balance.');
+  });
+  recenter?.addEventListener('click', recenterTilt);
+  window.screen.orientation?.addEventListener('change', recenterTilt);
+  window.addEventListener('orientationchange', recenterTilt);
   function startGame() {
     if (!playable() || port.scrollTop > 8 || dive) return;
     if (game.state !== 'ready') return;
@@ -367,6 +595,7 @@
   }
   document.addEventListener('keydown', event => {
     if (['Escape', 'PageDown', 'PageUp', 'Home', 'End', 'ArrowDown', 'ArrowUp', ' '].includes(event.key)) {
+      if (event.key === 'Escape') closeGuide();
       cancelInteraction();
       if (event.key === 'Escape') finalize();
       wake();
@@ -408,6 +637,43 @@
     }
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
+  function layoutActor() {
+    if (!hero) return;
+    const mobile = narrow.matches;
+    const landscape = mobile && viewportWidth > viewportHeight && viewportHeight <= 650;
+    const heroTop = hero.getBoundingClientRect().top;
+    const introBottom = hero.querySelector('.ocean-introduction').getBoundingClientRect().bottom - heroTop;
+    const headerBottom = hero.querySelector('.ocean-surface-header').getBoundingClientRect().bottom - heroTop;
+    const hudHeight = hero.querySelector('.ocean-hud').getBoundingClientRect().height;
+    const aspect = poses.balance[2] / poses.balance[3];
+    const actorTop = mobile && !landscape ? introBottom + 4 : Math.max(headerBottom + 12, heroHeight * 0.12);
+    const meterGap = landscape ? 4 : 8;
+    const bottomSpace = landscape ? 12 : mobile ? 88 : 56;
+    const room = Math.max(90, heroHeight - actorTop - hudHeight - bottomSpace - meterGap);
+    // Full scene budget: Flo plus the natural 1.6:1 wave below her tail.
+    // Keep its submerged base above the meter and score, even on short phones.
+    const sceneRatio = 0.78 + aspect * 1.48 / 1.6;
+    const height = Math.min(room / sceneRatio, heroHeight * (mobile ? 0.62 : 0.64),
+      viewportWidth * (mobile && !landscape ? 0.82 : 0.38) / aspect);
+    const x = port.clientWidth * (mobile && !landscape ? 0.5 : 0.68);
+    const y = actorTop + height / 2;
+    surfaceActor = { x, y, width: height * aspect };
+    // The scene and the HTML meter share a single layout anchor on every size.
+    hero.style.setProperty('--ocean-actor-x', `${x}px`);
+    hero.style.setProperty('--ocean-actor-y', `${y}px`);
+    hero.style.setProperty('--ocean-actor-width', `${height * aspect}px`);
+    hero.style.setProperty('--ocean-hud-y', `${actorTop + height * sceneRatio + meterGap + 8}px`);
+  }
+  function surfGeometry(t) {
+    const riderHeight = surfaceActor.width / (360 / 510);
+    const width = surfaceActor.width * 1.48;
+    const bob = motion.matches ? 0 : Math.sin(t * 1.5) * 3 + Math.sin(t * 2.4 + 0.4) * 1.5;
+    return {
+      x: surfaceActor.x,
+      crestY: surfaceActor.y + riderHeight * 0.28 + bob,
+      width, height: width / 1.6, bob
+    };
+  }
   function resize() {
     const anchor = readingAnchor;
     const oldHeight = heroHeight;
@@ -421,14 +687,9 @@
     } else if (home && oldScroll >= oldHeight && !dive) {
       port.scrollTop = oldScroll + heroHeight - oldHeight;
     }
-    if (hero && narrow.matches) {
-      const introBottom = hero.querySelector('.ocean-introduction').getBoundingClientRect().bottom + port.scrollTop;
-      const hudTop = hero.querySelector('.ocean-hud').getBoundingClientRect().top + port.scrollTop;
-      const room = Math.max(75, hudTop - introBottom - 32);
-      const aspect = poses.balance[2] / poses.balance[3];
-      mobileActorWidth = Math.min(viewportWidth * 0.54, heroHeight * 0.38, room * aspect);
-      mobileActorY = Math.min(heroHeight * 0.655, hudTop - mobileActorWidth / aspect / 2 - 16);
-    }
+    layoutActor();
+    const margin = narrow.matches ? 58 : 80;
+    companion?.setBounds(margin, Math.max(margin, viewportHeight - margin - 54));
     sizeCanvas(actor, actorCtx, viewportWidth, viewportHeight);
     sizeCanvas(ambient, ambientCtx, viewportWidth, viewportHeight);
     if (surface) sizeCanvas(surface, surfaceCtx, port.clientWidth, heroHeight);
@@ -442,6 +703,12 @@
     if (surface) sizeCanvas(surface, surfaceCtx, port.clientWidth, heroHeight);
     wake();
   }).observe(port);
+  if (hero && window.ResizeObserver) {
+    const hudObserver = new ResizeObserver(() => { layoutActor(); wake(); });
+    hudObserver.observe(hero.querySelector('.ocean-hud'));
+    hudObserver.observe(hero.querySelector('.ocean-introduction'));
+    hudObserver.observe(hero.querySelector('.ocean-surface-header'));
+  }
 
   // Paint the sea with layered wave bands. All shapes remain below the DOM UI.
   function cloud(ctx, x, y, scale, alpha) {
@@ -459,6 +726,139 @@
   function waveY(x, y, amplitude, phase, width) {
     return y + Math.sin(x / width * Math.PI * 3.3 + phase) * amplitude +
       Math.sin(x / width * Math.PI * 7 - phase * 0.7) * amplitude * 0.27;
+  }
+  /**
+   * One natural breaking crest over a broad, submerged shoulder.
+   * x/crestY is the fixed rider contact. Bounds are x + [-.64, .36] * width
+   * and crestY + [-.015, 1] * height. t=0 gives a still reduced-motion frame.
+   */
+  function drawSurfWave(ctx, x, crestY, width, height, t) {
+    if (!ctx || !(width > 0) || !(height > 0)) return;
+    const time = Number.isFinite(t) ? t : 0;
+    // Only the unsupported lip breathes; the rider's shoulder never slides.
+    const curl = Math.sin(time * 1.13) * 0.007 + Math.sin(time * 2.37) * 0.003;
+    ctx.save();
+    ctx.translate(x, crestY);
+    ctx.scale(width, height);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    function silhouette() {
+      ctx.beginPath();
+      ctx.moveTo(-0.64, 0.96);
+      // The low trailing base climbs in one long, tapering shoulder.
+      ctx.bezierCurveTo(-0.42, 0.93, -0.29, 0.74, -0.18, 0.40);
+      ctx.bezierCurveTo(-0.10, 0.14, -0.08, 0.015, 0, 0);
+      // A single round lip overhangs the concave forward face.
+      ctx.bezierCurveTo(0.08, -0.015, 0.17, 0.00, 0.225, 0.065 + curl);
+      ctx.bezierCurveTo(0.275, 0.125 + curl, 0.25, 0.205, 0.20, 0.205);
+      ctx.bezierCurveTo(0.165, 0.205, 0.158, 0.17, 0.175, 0.145);
+      ctx.bezierCurveTo(0.115, 0.19, 0.095, 0.37, 0.105, 0.53);
+      ctx.bezierCurveTo(0.12, 0.79, 0.225, 0.92, 0.36, 0.91);
+      ctx.bezierCurveTo(0.29, 1.00, -0.35, 1.00, -0.64, 0.96);
+      ctx.closePath();
+    }
+
+    // Alpha disappears below the waterline instead of outlining a cutout base.
+    const body = ctx.createLinearGradient(0, 0, 0, 1);
+    body.addColorStop(0, '#78d4cd');
+    body.addColorStop(0.16, '#2c9cab');
+    body.addColorStop(0.42, '#136e8c');
+    body.addColorStop(0.70, '#165f7b');
+    body.addColorStop(0.86, '#247f8bb0');
+    body.addColorStop(1, '#248a9900');
+    silhouette(); ctx.fillStyle = body; ctx.fill();
+
+    ctx.save();
+    silhouette(); ctx.clip();
+    // Soft face ribbons follow the same sweep as the reference silhouette.
+    const shoulder = ctx.createLinearGradient(-0.20, 0.12, -0.20, 0.98);
+    shoulder.addColorStop(0, '#a0e2d57d');
+    shoulder.addColorStop(0.55, '#72cfc647');
+    shoulder.addColorStop(1, '#72cfc600');
+    ctx.fillStyle = shoulder;
+    ctx.beginPath();
+    ctx.moveTo(-0.61, 0.96);
+    ctx.bezierCurveTo(-0.36, 0.85, -0.22, 0.38, -0.065, 0.10);
+    ctx.bezierCurveTo(-0.15, 0.41, -0.18, 0.80, -0.43, 0.98);
+    ctx.closePath(); ctx.fill();
+    const hollow = ctx.createLinearGradient(0.1, 0.16, 0.1, 0.98);
+    hollow.addColorStop(0, '#073d645a');
+    hollow.addColorStop(0.66, '#073d6435');
+    hollow.addColorStop(1, '#073d6400');
+    ctx.fillStyle = hollow;
+    ctx.beginPath();
+    ctx.moveTo(0.17, 0.14);
+    ctx.bezierCurveTo(-0.015, 0.33, -0.09, 0.72, 0.08, 0.98);
+    ctx.lineTo(0.36, 0.98);
+    ctx.lineTo(0.31, 0.47);
+    ctx.closePath(); ctx.fill();
+
+    // Short ribbons travel up the face; each fades at both ends of its route.
+    // Separate deterministic phases avoid moving the whole wave as one shape.
+    function facePoint(p, lane) {
+      const q = 1 - p;
+      return {
+        x: q * q * q * -0.57 + 3 * q * q * p * -0.30 +
+          3 * q * p * p * -0.23 + p * p * p * 0.08 + lane,
+        y: q * q * q * 0.97 + 3 * q * q * p * 0.84 +
+          3 * q * p * p * 0.17 + p * p * p * 0.075
+      };
+    }
+    for (let i = 0; i < 10; i++) {
+      const phase = (time * (0.19 + i % 3 * 0.013) + i * 0.173) % 1;
+      const lane = ((i * 7) % 5 - 2) * 0.024;
+      const a = facePoint(Math.max(0, phase - 0.115), lane);
+      const b = facePoint(Math.max(0, phase - 0.055), lane);
+      const c = facePoint(phase, lane);
+      const opacity = Math.sin(phase * Math.PI) * 0.45;
+      ctx.strokeStyle = `rgba(172,233,218,${opacity})`;
+      ctx.lineWidth = (i % 3 === 0 ? 1.6 : 0.9) / height;
+      ctx.beginPath(); ctx.moveTo(a.x, a.y);
+      ctx.quadraticCurveTo(b.x, b.y, c.x, c.y); ctx.stroke();
+    }
+    ctx.restore();
+
+    // The broad turquoise cap rolls into one rounded hook, with no crossbar.
+    ctx.strokeStyle = '#8edbd1';
+    ctx.lineWidth = 0.046;
+    ctx.beginPath();
+    ctx.moveTo(-0.20, 0.48);
+    ctx.bezierCurveTo(-0.12, 0.22, -0.09, 0.035, 0, 0.015);
+    ctx.bezierCurveTo(0.11, -0.004, 0.25, 0.055 + curl, 0.24, 0.14 + curl);
+    ctx.bezierCurveTo(0.235, 0.19, 0.19, 0.205, 0.18, 0.17);
+    ctx.stroke();
+    ctx.strokeStyle = '#e1f4df';
+    ctx.lineWidth = 0.016;
+    ctx.beginPath();
+    ctx.moveTo(-0.16, 0.32);
+    ctx.bezierCurveTo(-0.10, 0.12, -0.065, 0.013, 0, 0.008);
+    ctx.bezierCurveTo(0.11, -0.007, 0.21, 0.035 + curl, 0.237, 0.10 + curl);
+    ctx.stroke();
+    ctx.strokeStyle = '#d5f2e4b8';
+    ctx.lineWidth = 0.010;
+    ctx.setLineDash([0.018, 0.028, 0.010, 0.045]);
+    ctx.lineDashOffset = -time * 0.055;
+    ctx.beginPath();
+    ctx.moveTo(-0.22, 0.53);
+    ctx.bezierCurveTo(-0.13, 0.27, -0.09, 0.035, 0.01, 0.026);
+    ctx.bezierCurveTo(0.14, 0.014, 0.23, 0.08 + curl, 0.22, 0.16);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // A few flecks peel from the lip and dissolve into its forward face.
+    for (let i = 0; i < 12; i++) {
+      const p = (time * (0.30 + i % 3 * 0.017) + i * 0.147) % 1;
+      const px = 0.20 + p * 0.11 + Math.sin(i * 2.399) * 0.014;
+      const py = 0.14 + p * p * 0.38 + curl;
+      const alpha = Math.sin(p * Math.PI) * 0.60;
+      const radius = 0.65 + i % 3 * 0.45;
+      ctx.fillStyle = `rgba(225,244,223,${alpha})`;
+      ctx.beginPath();
+      ctx.ellipse(px, py, radius / width, radius / height, -0.4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
   }
   function drawSea(t) {
     if (!surfaceCtx || port.scrollTop >= heroHeight) return;
@@ -482,12 +882,12 @@
     sea.addColorStop(0.65, '#248a99'); sea.addColorStop(1, '#156574');
     ctx.fillStyle = sea; ctx.fillRect(0, horizon, w, h - horizon);
     ctx.fillStyle = '#f8f0d8aa'; ctx.fillRect(0, horizon, w, 1.5);
-    // Perspective glints converge on the sun near the horizon.
+    // Glints move from the horizon toward the viewer instead of blinking in place.
     for (let i = 0; i < 24; i++) {
-      const p = i / 24, y = horizon + p * p * h * 0.29;
-      const length = (12 + p * 95) * (0.65 + 0.35 * Math.sin(i * 7.2 + t * 0.8));
-      const x = sunX + Math.sin(i * 4.3 + t * 0.12) * (5 + p * 65);
-      ctx.strokeStyle = `rgba(255,239,184,${0.35 * (1 - p)})`;
+      const p = (i / 24 + t * 0.024) % 1, y = horizon + p * p * h * 0.29;
+      const length = (12 + p * 95) * (0.65 + 0.35 * Math.sin(i * 7.2));
+      const x = sunX + Math.sin(i * 4.3) * (5 + p * 65);
+      ctx.strokeStyle = `rgba(255,239,184,${0.35 * Math.sin(p * Math.PI)})`;
       ctx.lineWidth = 1.2 + p * 1.6;
       ctx.beginPath(); ctx.moveTo(x - length, y); ctx.lineTo(x + length, y); ctx.stroke();
     }
@@ -511,6 +911,40 @@
       ctx.strokeStyle = index === 3 ? '#d1eee0aa' : '#d1eee056';
       ctx.lineWidth = index === 3 ? 2.5 : 1.2; ctx.stroke();
     });
+    const surf = surfGeometry(t);
+    // Perspective foam moves past the rider, faster and wider in the foreground.
+    // Fixed seeds and bounded loops keep this flow stable across frames.
+    for (let i = 0; i < 34; i++) {
+      const p = (i * 0.61803398875 + t * (0.07 + i % 3 * 0.008)) % 1;
+      const depth = p * p;
+      const lane = ((i * 47) % 101) / 100 - 0.5;
+      const y = horizon + depth * (h - horizon);
+      const x = surf.x + lane * (w * 0.22 + depth * w * 1.55);
+      const length = 3 + depth * (18 + i % 5 * 8);
+      const alpha = Math.sin(p * Math.PI) * (0.12 + depth * 0.22);
+      ctx.strokeStyle = `rgba(205,239,224,${alpha})`;
+      ctx.lineWidth = 0.7 + depth * 1.3;
+      ctx.beginPath();
+      ctx.moveTo(x - length, y);
+      ctx.quadraticCurveTo(x, y - 1.5 - depth * 2, x + length, y + depth * 1.5);
+      ctx.stroke();
+    }
+    // Flo and the wave share one crest contact and the same subtle root motion.
+    drawSurfWave(ctx, surf.x, surf.crestY, surf.width, surf.height, t);
+    // Dissolving surface ripples cross the submerged base, tying it into the sea.
+    // Their entire path stays inside the wave's allocated height above the HUD.
+    for (let i = 0; i < 5; i++) {
+      const p = (t * 0.19 + i * 0.213) % 1;
+      const y = surf.crestY + surf.height * (0.83 + p * 0.15);
+      const x = surf.x - surf.width * (0.12 + p * 0.16);
+      const length = surf.width * (0.12 + p * 0.19);
+      ctx.strokeStyle = `rgba(165,224,210,${Math.sin(p * Math.PI) * 0.24})`;
+      ctx.lineWidth = 1 + p * 0.4;
+      ctx.beginPath();
+      ctx.moveTo(x - length, y);
+      ctx.quadraticCurveTo(x, y - surf.height * 0.012, x + length, y);
+      ctx.stroke();
+    }
     // A clear front lip reveals the underwater world before the first dive.
     const bottom = ctx.createLinearGradient(0, h * 0.92, 0, h);
     bottom.addColorStop(0, '#07506400'); bottom.addColorStop(1, '#0b5366');
@@ -523,7 +957,7 @@
       ctx.beginPath(); ctx.arc(x, y, 2 + i % 3, 0, Math.PI * 2); ctx.stroke();
     }
     if (game.state === 'falling' || game.state === 'resurfacing') {
-      const x = w * (narrow.matches ? 0.5 : 0.66), y = h * 0.79;
+      const x = surfaceActor.x, y = surfaceActor.y + surfaceActor.width / (360 / 510) / 2;
       const age = game.state === 'falling' ? game.stateTime / 0.65 : 1 - game.stateTime;
       ctx.strokeStyle = `rgba(231,255,244,${0.65 * (1 - clamp(age))})`;
       ctx.lineWidth = 2;
@@ -579,8 +1013,52 @@
     balance: 1, lean: 390 / 360, catch: 740 / 887 * 510 / 360,
     fall: 520 / 360, rise: 730 / 887 * 510 / 360, swim: 1
   };
+  const balanceAnchors = [[225, 343], [252, 347], [274, 350], [257.5, 347],
+    [247, 327.5], [250.5, 330.5], [247, 331.5], [242.5, 331.5]];
+  function breathAmount(t) {
+    if (motion.matches) return 0;
+    const phase = t % 3.8;
+    if (phase < 1.2) return ease(phase / 1.2);
+    if (phase < 1.35) return 1;
+    if (phase < 3.15) return 1 - ease((phase - 1.35) / 1.8);
+    return 0;
+  }
+  function breathingLines(x, y, width, rotation, alpha, t) {
+    if (!breathArt.naturalWidth || motion.matches || alpha <= 0) return;
+    const breath = breathAmount(t);
+    const size = width * (1.1 + breath * 0.06);
+    actorCtx.save();
+    actorCtx.translate(x, y);
+    actorCtx.rotate(rotation);
+    actorCtx.globalAlpha = alpha * breath * 0.32;
+    actorCtx.drawImage(breathArt, -size / 2, -size / 2, size, size);
+    actorCtx.restore();
+  }
   function sprite(pose, x, y, width, rotation, alpha, t, direction = 1) {
     if (alpha <= 0) return;
+    if (balanceReady && (pose === 'balance' || pose === 'lean' || pose === 'catch')) {
+      const frame = pose === 'lean' ? (Math.abs(game.lean) > 0.52 ? 2 : 1) :
+        pose === 'catch' ? (Math.abs(game.lean) > 0.5 ? 4 : 3) :
+        recoveryTime > 0 ? (recoveryTime > 0.24 ? 5 : recoveryTime > 0.12 ? 6 : 7) : 0;
+      const cell = balanceArt.naturalWidth / 4;
+      const height = width * 510 / 360, scale = height / 413;
+      const [ax, ay] = balanceAnchors[frame];
+      actorCtx.save();
+      actorCtx.globalAlpha = alpha;
+      actorCtx.translate(x, y);
+      actorCtx.rotate(rotation);
+      actorCtx.scale(direction, 1);
+      const breath = breathAmount(t);
+      actorCtx.translate(0, height * 0.28);
+      actorCtx.scale(1 + breath * 0.004, 1 + breath * 0.008);
+      actorCtx.translate(0, -height * 0.28);
+      // Register the narrow tail junction on the wave; changing drawings
+      // must never make the character's contact slide across the crest.
+      actorCtx.drawImage(balanceArt, frame % 4 * cell, Math.floor(frame / 4) * cell,
+        cell, cell, -ax * scale, height * 0.28 - ay * scale, cell * scale, cell * scale);
+      actorCtx.restore();
+      return;
+    }
     const [sx, sy, sw, sh] = poses[pose];
     width *= poseScale[pose];
     const height = width * sh / sw;
@@ -596,7 +1074,37 @@
   function playerInput() {
     const left = keys.has('arrowleft') || keys.has('a');
     const right = keys.has('arrowright') || keys.has('d');
-    return left || right ? Number(right) - Number(left) : input;
+    if (left || right) return Number(right) - Number(left);
+    if (touchId !== null) return input;
+    return tiltEnabled ? tilt.read(performance.now()) : input;
+  }
+  function drawCompanion(x, y, width, alpha, t) {
+    if (!alpha) return;
+    const state = companion?.state || 'resting';
+    if (companionReady) {
+      // Visual samples run separately from continuous root movement.
+      // Eight ordered swim drawings, then rest / look up / look down / blink.
+      const moving = state === 'swimming' || (state === 'settling' && companion.energy > 0.12);
+      companionFrame = moving ? Math.floor(swimPhase) % 8 :
+        state === 'anticipating' || state === 'looking' ? (companion.direction < 0 ? 9 : 10) :
+        t % 5.7 > 5.52 ? 11 : 8;
+      const sw = companionArt.naturalWidth / 4, sh = companionArt.naturalHeight / 3;
+      const height = width * sh / sw;
+      actorCtx.save();
+      actorCtx.globalAlpha = alpha;
+      actorCtx.translate(x, y);
+      actorCtx.rotate(companionRotation);
+      const breath = moving ? 0 : breathAmount(t);
+      actorCtx.translate(0, height * 0.2);
+      actorCtx.scale(1 + breath * 0.004, 1 + breath * 0.008);
+      actorCtx.translate(0, -height * 0.2);
+      actorCtx.drawImage(companionArt, companionFrame % 4 * sw,
+        Math.floor(companionFrame / 4) * sh, sw, sh, -width / 2, -height / 2, width, height);
+      actorCtx.restore();
+      if (!moving) breathingLines(x, y - height * 0.12, width, companionRotation, alpha * 0.7, t);
+    } else {
+      sprite('swim', x, y, width * 0.8, companionRotation, alpha, t);
+    }
   }
   function drawActor(t, dt) {
     const ctx = actorCtx, w = viewportWidth, h = viewportHeight;
@@ -605,16 +1113,19 @@
     const p = home ? clamp(port.scrollTop / Math.max(1, targetTop(site))) : 1;
     const q = motion.matches ? (underwater ? 1 : 0) : ease(p);
     const mobile = narrow.matches;
-    const dockRect = dock.getBoundingClientRect();
-    const destination = mobile ?
-      { x: w * (w < 360 ? 0.40 : 0.5), y: dockRect.top + Math.min(36, dockRect.height / 2), width: Math.min(108, 60 * poses.swim[2] / poses.swim[3]) } :
-      { x: w - 56, y: h * 0.58, width: 93 };
-    const initialWidth = mobile ? mobileActorWidth : Math.min(w * 0.28, heroHeight * 0.42 * poses.balance[2] / poses.balance[3], 330);
-    let x = mix(w * (mobile ? 0.5 : 0.66), destination.x, q);
-    let y = mix(mobile ? mobileActorY : heroHeight * 0.655, destination.y, q);
+    const laneWidth = mobile ? 76 : 112;
+    const destination = {
+      x: w - laneWidth / 2,
+      y: companion?.y ?? h * 0.56,
+      width: mobile ? 78 : 114
+    };
+    companionPosition = destination;
+    const initialWidth = surfaceActor.width;
+    let x = mix(surfaceActor.x, destination.x, q);
+    let y = mix(surfaceActor.y, destination.y, q);
     let width = mix(initialWidth, destination.width, q);
     let rotation = (1 - q) * game.lean * 0.14;
-    const bob = effectsEnabled() ? Math.sin(t * 1.5) * mix(5, 2, q) : 0;
+    const bob = motion.matches ? 0 : mix(surfGeometry(t).bob, Math.sin(t * 1.5) * 1.5, q);
     y += bob;
     let pose = 'balance', direction = 1, opacity = 1;
     if (p < 0.025) {
@@ -637,6 +1148,7 @@
     // A brief dissolve connects drawings; each directional drawing is mirrored
     // around the same anchor so left/right actions retain identical anatomy.
     if (visualPose.name !== pose || visualPose.direction !== direction) {
+      if (pose === 'balance' && (visualPose.name === 'lean' || visualPose.name === 'catch')) recoveryTime = 0.36;
       previousPose = visualPose;
       visualPose = { name: pose, direction };
       poseBlend = 0;
@@ -646,7 +1158,10 @@
     const blend = clamp((q - 0.08) / 0.7);
     sprite(previousPose.name, x, y, width, rotation, (1 - blend) * opacity * (1 - poseBlend), t, previousPose.direction);
     sprite(visualPose.name, x, y, width, rotation, (1 - blend) * opacity * poseBlend, t, visualPose.direction);
-    sprite('swim', x, y, width, 0, blend, t);
+    if (pose !== 'fall' && pose !== 'rise') {
+      breathingLines(x, y - width * 0.2, width, rotation, (1 - blend) * opacity, t);
+    }
+    drawCompanion(x, y, width, blend, t);
   }
   function updateHud(now) {
     if (!home || now - lastHud < 100) return;
@@ -673,6 +1188,19 @@
     lastTime = now;
     if (elapsedMs < 120) frameAverage = frameAverage * 0.97 + elapsedMs * 0.03;
     if (effectsEnabled()) clock += dt;
+    if (!isPaused()) recoveryTime = Math.max(0, recoveryTime - dt);
+    if (effectsEnabled() && underwater && companion) {
+      const previousState = companion.state;
+      companion.step(dt);
+      if (previousState === 'anticipating' && companion.state === 'swimming') swimPhase = 0;
+      if (companion.state === 'swimming' || companion.state === 'settling') {
+        swimPhase += dt * (10 + companion.energy * 6);
+      }
+      const pitch = (companion.state === 'swimming' || companion.state === 'settling') ?
+        -companion.direction * companion.energy * 0.48 :
+        companion.state === 'anticipating' ? companion.direction * 0.06 : 0;
+      companionRotation += (pitch - companionRotation) * (1 - Math.exp(-dt * 7));
+    }
     if (home && port.scrollTop <= 8 && playable() && now >= armAfter && !dive && !wheelTail && !pointers.size) {
       armed = true; hero.classList.add('is-armed');
     }
@@ -682,7 +1210,9 @@
       if (p >= 1) completeDive();
     }
     if (wheelTail && now >= wheelTail.end && (now - wheelTail.last >= 200 || now >= wheelTail.until)) wheelTail = null;
-    if (playable() && port.scrollTop <= 8 && !dive && touchPreview === 0 && !multiTouch) {
+    const sensorReady = !tiltEnabled || touch.active || keys.size ||
+      (tiltHasReading && now - lastSensorAt <= 500);
+    if (playable() && sensorReady && port.scrollTop <= 8 && !dive && touchPreview === 0 && !multiTouch) {
       game.step(dt, playerInput());
     }
     const activeGame = home && port.scrollTop <= 8 && playable() && game.state !== 'ready';
@@ -690,9 +1220,11 @@
     if (now - lastPaint >= cadence || !effectsEnabled()) {
       drawSea(clock);
       drawAmbient(clock);
-      drawActor(clock, dt);
       lastPaint = now;
     }
+    // Root movement is painted every display frame, independently of the
+    // cheaper 30 Hz background and the authored sprite cadence.
+    drawActor(clock, dt);
     updateHud(now);
     if (!underwater && effectsEnabled() && frameAverage > 25 && quality > 0.7) {
       if (++slowFrames > 150) { quality = 0.7; resize(); slowFrames = 0; }
@@ -708,10 +1240,17 @@
     artReady = true;
     if (play) play.disabled = false;
     body.classList.add('ocean-art-ready');
+    updateInputControls();
     updateState();
+    if (!guideInitialized) {
+      guideInitialized = true;
+      if (!guideSeen && !location.hash && !(initialPosition > 8) && port.scrollTop <= 8) showGuide();
+    }
   };
   art.onerror = correctionArt.onerror = () => {
     artReady = false;
+    disableTilt();
+    closeGuide();
     armed = false;
     hero?.classList.remove('is-armed');
     if (play) play.hidden = true;
@@ -719,8 +1258,21 @@
     updateState();
   };
   if (play) play.disabled = true;
+  updateInputControls();
   art.src = 'assets/images/ocean/mermaid-atlas.webp?v=flo-3';
   correctionArt.src = 'assets/images/ocean/mermaid-catch-rise.webp?v=flo-3';
+  companionArt.onload = () => {
+    companionReady = true;
+    body.classList.add('ocean-companion-art-ready');
+    wake();
+  };
+  companionArt.onerror = () => { companionReady = false; wake(); };
+  companionArt.src = 'assets/images/ocean/flo-companion.webp?v=20261020';
+  balanceArt.onload = () => { balanceReady = true; body.classList.add('ocean-balance-art-ready'); wake(); };
+  balanceArt.onerror = () => { balanceReady = false; wake(); };
+  balanceArt.src = 'assets/images/ocean/flo-balance-atlas-v1.webp?v=20261020';
+  breathArt.onload = wake;
+  breathArt.src = 'assets/images/ocean/flo-breathing-lines.svg';
   if (motion.matches) setStatus('Motion is reduced. Choose Play to balance, or dive into the portfolio.');
   resize();
   updateState();

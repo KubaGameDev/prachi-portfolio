@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { BalanceGame, getBalancePose, TouchIntent, WheelIntent, constants } = require('../assets/js/ocean-core.js');
+const { BalanceGame, getBalancePose, TiltInput, TouchIntent, WheelIntent, constants } = require('../assets/js/ocean-core.js');
 
 function simulate(game, duration, input = 0, dt = 1 / 120) {
   const frames = Math.round(duration / dt);
@@ -220,4 +220,120 @@ test('recovering angular velocity selects catch even without opposing player inp
 test('invalid pose input falls back to a safe centered pose', () => {
   assert.deepEqual(getBalancePose(NaN, Infinity, undefined),
     { pose: 'balance', direction: 1, weight: 0 });
+});
+
+test('tilt calibrates the first valid comfortable pose and ignores neutral sensor noise', () => {
+  const tilt = new TiltInput();
+  assert.equal(tilt.read(0), 0);
+  assert.deepEqual(tilt.sample(0, 12, 0, 0), { valid: true, calibrated: true, input: 0 });
+  assert.equal(tilt.sample(0, 13.8, 0, 50).input, 0);
+  assert.equal(tilt.sample(0, 10.2, 0, 100).input, 0);
+  assert.ok(tilt.sample(0, 16, 0, 200).input > 0);
+  tilt.calibrate();
+  assert.equal(tilt.calibrated, false);
+  assert.equal(tilt.read(250), 0);
+  assert.deepEqual(tilt.sample(35, -30, 0, 250), { valid: true, calibrated: true, input: 0 });
+});
+
+test('tilt smooths a step over 100ms and bounds full correction in both directions', () => {
+  const tilt = new TiltInput();
+  tilt.sample(0, 0, 0, 0);
+  const first = tilt.sample(0, 18, 0, 100).input;
+  assert.ok(Math.abs(first - (1 - Math.exp(-1))) < 0.000001);
+  const settled = tilt.sample(0, 75, 0, 500).input;
+  assert.ok(settled > 0.99 && settled <= 1);
+  const opposite = tilt.sample(0, -75, 0, 1000).input;
+  assert.ok(opposite < -0.98 && opposite >= -1);
+});
+
+test('tilt smoothing is independent of sensor sample frequency', () => {
+  const frequent = new TiltInput();
+  const sparse = new TiltInput();
+  frequent.sample(0, 0, 0, 0);
+  sparse.sample(0, 0, 0, 0);
+  for (let time = 10; time <= 100; time += 10) frequent.sample(0, 18, 0, time);
+  sparse.sample(0, 18, 0, 100);
+  assert.ok(Math.abs(frequent.read(100) - sparse.read(100)) < 0.000001);
+});
+
+test('tilt reads fall back to zero after 500ms without a valid sample', () => {
+  const tilt = new TiltInput();
+  tilt.sample(0, 0, 0, 0);
+  const last = tilt.sample(0, 20, 0, 100).input;
+  assert.ok(last > 0);
+  assert.equal(tilt.read(600), last);
+  assert.equal(tilt.read(601), 0);
+  assert.equal(tilt.read(NaN), 0);
+  assert.equal(tilt.read(null), 0);
+  assert.equal(tilt.read(99), 0);
+});
+
+test('missing or invalid orientation values never calibrate or refresh existing input', () => {
+  const tilt = new TiltInput();
+  for (const invalid of [null, undefined, NaN, Infinity, -Infinity, '0']) {
+    for (const index of [0, 1, 2, 3]) {
+      const sample = [0, 0, 0, 0];
+      sample[index] = invalid;
+      assert.deepEqual(tilt.sample(...sample), { valid: false, calibrated: false, input: 0 });
+    }
+  }
+  tilt.sample(0, 10, 0, 0);
+  const last = tilt.sample(0, 30, 0, 100).input;
+  assert.deepEqual(tilt.sample(null, 0, 0, 400),
+    { valid: false, calibrated: true, input: last });
+  assert.equal(tilt.lastSampleTime, 100);
+  assert.equal(tilt.neutral, 10);
+  assert.equal(tilt.read(601), 0);
+  assert.equal(tilt.sample(0, 0, 0, 50).valid, false);
+  assert.equal(tilt.lastSampleTime, 100);
+});
+
+test('tilt signs follow screen coordinates in portrait and both landscape rotations', () => {
+  for (const [angle, beta, gamma, direction] of [
+    [0, 0, 20, 1],
+    [0, 0, -20, -1],
+    [90, 20, 0, 1],
+    [90, -20, 0, -1],
+    [270, 20, 0, -1],
+    [270, -20, 0, 1],
+    [180, 0, 20, -1]
+  ]) {
+    const tilt = new TiltInput();
+    tilt.sample(0, 0, angle, 0);
+    const result = tilt.sample(beta, gamma, angle, 100);
+    assert.equal(Math.sign(result.input), direction, `screen angle ${angle}, beta ${beta}, gamma ${gamma}`);
+  }
+});
+
+test('a screen-orientation change recalibrates while equivalent angles retain calibration', () => {
+  const tilt = new TiltInput();
+  tilt.sample(0, 0, 0, 0);
+  assert.ok(tilt.sample(0, 20, 360, 100).input > 0);
+  assert.equal(tilt.sample(25, 0, 90, 200).input, 0);
+  assert.ok(tilt.sample(45, 0, 90, 300).input > 0);
+  assert.equal(tilt.sample(25, 0, -90, 400).input, 0);
+  assert.ok(tilt.sample(45, 0, 270, 500).input < 0);
+});
+
+test('near-vertical Euler branch changes do not create a false tilt', () => {
+  const tilt = new TiltInput();
+  // Crossing beta=90 can flip gamma to the other branch despite virtually
+  // unchanged gravity. Raw gamma subtraction would report a 179.8 degree jump.
+  tilt.sample(89, 89.9, 0, 0);
+  assert.ok(Math.abs(tilt.sample(91, -89.9, 0, 100).input) < 0.000001);
+  tilt.calibrate();
+  tilt.sample(179, 30, 0, 200);
+  assert.ok(Math.abs(tilt.sample(-179, 30, 0, 300).input) < 0.000001);
+});
+
+test('actual lateral tilt remains responsive with the phone held upright', () => {
+  const portrait = new TiltInput();
+  portrait.sample(90, 0, 0, 0);
+  assert.equal(portrait.sample(90, 85, 0, 100).input, 0,
+    'gamma alone at the vertical singularity is not lateral roll');
+  assert.ok(portrait.sample(70, 90, 0, 200).input > 0.6,
+    '20 degrees of real lateral gravity produces right correction');
+  const landscape = new TiltInput();
+  landscape.sample(0, 90, 90, 0);
+  assert.ok(landscape.sample(20, 90, 90, 100).input > 0.6);
 });

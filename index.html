@@ -12,7 +12,7 @@
       <link rel="stylesheet" href="assets/css/41035204ceaa746ca7ffac7e9bb8c9d11782842589-89cfe22bd70e.css" type="text/css">
     <title>Prachi Gaur</title>
     <meta http-equiv="Content-Security-Policy" content="default-src 'self' data: blob:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; media-src 'self' blob:; connect-src 'none'; frame-src 'none'; form-action 'none'; object-src 'none'"><link rel="stylesheet" href="assets/css/local.css?v=20261020-1">
-    <link rel="stylesheet" href="assets/css/ocean.css?v=20261020-1"></head>
+    <link rel="stylesheet" href="assets/css/ocean.css?v=20261020-flo1"></head>
   <body data-ocean-home="true" class="transition-enabled">  <div class="page-background-video page-background-video-with-panel">
   </div>
   <div class="js-responsive-nav">
@@ -52,6 +52,33 @@
       <p class="ocean-eyebrow">THE ART OF GOING WITH THE FLOW</p>
       <h1>A little balance.<br><em>A world below.</em></h1>
       <p class="ocean-description">Stay a while on the waves.<br>My world of art is just beneath the surface.</p>
+      <div class="ocean-hint-slot">
+        <section id="ocean-input-guide" class="ocean-input-guide" hidden aria-label="Balance controls">
+          <div class="ocean-guide-mobile ocean-guide-controls">
+            <figure class="ocean-guide-control">
+              <svg class="ocean-guide-illustration" viewBox="0 0 140 88" aria-hidden="true">
+                <path d="M35 44H13m0 0 7-7m-7 7 7 7M105 44h22m0 0-7-7m7 7-7 7"></path>
+                <g class="ocean-guide-phone"><rect x="50" y="10" width="40" height="68" rx="8"></rect><path d="M62 17h16M64 70h12"></path><circle cx="70" cy="43" r="5"></circle></g>
+              </svg>
+              <figcaption>Tilt gently<br>left and right</figcaption>
+            </figure>
+            <figure class="ocean-guide-control">
+              <svg class="ocean-guide-illustration" viewBox="0 0 140 88" aria-hidden="true"><path d="M23 44h94M23 44l7-7m-7 7 7 7m87-7-7-7m7 7-7 7"></path><g class="ocean-guide-slide"><circle cx="70" cy="44" r="11"></circle><circle cx="70" cy="44" r="3"></circle></g></svg>
+              <figcaption>Or slide<br>your thumb</figcaption>
+            </figure>
+          </div>
+          <div class="ocean-guide-desktop ocean-guide-controls">
+            <figure class="ocean-guide-control">
+              <svg class="ocean-guide-illustration" viewBox="0 0 140 88" aria-hidden="true"><path d="M33 44H13m0 0 7-7m-7 7 7 7M107 44h20m0 0-7-7m7 7-7 7"></path><g class="ocean-guide-mouse"><rect x="51" y="12" width="38" height="64" rx="19"></rect><path d="M70 13v20"></path><rect x="67" y="25" width="6" height="12" rx="3"></rect></g></svg>
+              <figcaption>Move your mouse<br>left and right</figcaption>
+            </figure>
+            <figure class="ocean-guide-control">
+              <div class="ocean-guide-keys" aria-hidden="true"><kbd>←</kbd><kbd>→</kbd></div>
+              <figcaption>Or use the arrows<br>and A / D</figcaption>
+            </figure>
+          </div>
+        </section>
+      </div>
     </div>
     <div class="ocean-hud" aria-label="Game controls and score">
       <div class="ocean-scoreboard">
@@ -64,7 +91,14 @@
       </div>
       <p id="ocean-status" class="ocean-status" role="status" aria-live="polite">A little left, a little right. Find your balance.</p>
       <p id="ocean-instructions" class="ocean-instructions"><span class="ocean-desktop-instruction">Move your mouse to balance · ← → or A / D</span><span class="ocean-touch-instruction">Slide your thumb to balance · Swipe up firmly to dive</span></p>
-      <button id="ocean-play" class="ocean-play" type="button">Play / resume <span aria-hidden="true">↗</span></button>
+      <div class="ocean-game-actions">
+        <button id="ocean-play" class="ocean-play" type="button">Play / resume <span aria-hidden="true">↗</span></button>
+        <button id="ocean-help" class="ocean-play" type="button" aria-controls="ocean-input-guide" aria-expanded="false">How to play</button>
+        <button id="ocean-enable-tilt" class="ocean-play ocean-input-mobile" type="button">Enable phone tilt</button>
+        <button id="ocean-use-touch" class="ocean-play ocean-input-mobile" type="button" hidden>Use touch</button>
+        <button id="ocean-recenter" class="ocean-play ocean-input-mobile" type="button" hidden>Recenter tilt</button>
+      </div>
+      <p id="ocean-tilt-feedback" class="ocean-tilt-feedback" role="status" aria-live="polite" hidden></p>
     </div>
     <div class="ocean-dive">
       <a id="ocean-dive-link" class="ocean-dive-link" href="#underwater"><span>Dive into portfolio</span><span class="ocean-dive-arrow" aria-hidden="true">↓</span></a>
@@ -234,7 +268,8 @@
       </div>
     </div>
   </div>
-<script src="assets/js/ocean-core.js?v=20261020-1" defer></script>
-<script src="assets/js/ocean.js?v=20261020-1" defer></script>
+<script src="assets/js/ocean-core.js?v=20261020-surf2" defer></script>
+<script src="assets/js/flo-motion.js?v=20261020-flo1" defer></script>
+<script src="assets/js/ocean.js?v=20261020-flo1" defer></script>
 <script src="assets/js/local.js?v=20261020-ocean1" defer></script><script src="assets/js/cursor-trail.js?v=20261020-ocean1" defer></script></body>
 </html>
