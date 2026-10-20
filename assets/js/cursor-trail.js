@@ -1,7 +1,7 @@
 /* Local refraction: neutral displacement outside expanding pointer ripples. */
 (() => {
   const reduced = matchMedia('(prefers-reduced-motion: reduce)');
-  const fine = matchMedia('(hover: hover) and (pointer: fine)');
+  const coarse = matchMedia('(pointer: coarse)');
   const ns = 'http://www.w3.org/2000/svg';
   const svg = document.createElementNS(ns, 'svg');
   svg.setAttribute('aria-hidden', 'true');
@@ -10,8 +10,8 @@
   const map = document.createElement('canvas');
   const ctx = map.getContext('2d');
   if (!ctx) return;
-  let waves = [], targets = [], frame = 0, lastFrame = 0, lastPoint = null;
-  const allowed = () => fine.matches && !reduced.matches && !document.hidden && !document.body.classList.contains('local-nav-open');
+  let waves = [], targets = [], frame = 0, lastFrame = 0, lastPoint = null, needsCollect = false;
+  const allowed = () => !reduced.matches && !document.hidden && !document.body.classList.contains('local-nav-open');
   function reset() {
     cancelAnimationFrame(frame); frame = 0; waves = []; lastPoint = null;
     targets.forEach(t => {t.el.style.filter = t.original;}); targets = []; defs.replaceChildren();
@@ -42,19 +42,21 @@
   function draw(now) {
     frame = 0;
     if (!allowed()) {reset();return;}
-    if (now-lastFrame < 32) {frame=requestAnimationFrame(draw);return;}
+    if (now-lastFrame < (coarse.matches ? 40 : 32)) {frame=requestAnimationFrame(draw);return;}
     lastFrame=now; waves=waves.filter(w=>now-w.time<950);
     if (!waves.length) {reset();return;}
-    const scale=.4, width=Math.ceil(innerWidth*scale),height=Math.ceil(innerHeight*scale);
+    if (needsCollect) {collect();needsCollect=false;}
+    const scale=coarse.matches ? .3 : .4, width=Math.ceil(innerWidth*scale),height=Math.ceil(innerHeight*scale);
     if(map.width!==width||map.height!==height){map.width=width;map.height=height;}
     const pixels=ctx.createImageData(width,height), data=pixels.data;
     for(let i=0;i<data.length;i+=4){data[i]=128;data[i+1]=128;data[i+2]=128;data[i+3]=255;}
     for(const wave of waves){
       const age=(now-wave.time)/950, radius=8+age*90, extent=radius+22;
-      const left=Math.max(0,Math.floor((wave.x-extent)*scale)),right=Math.min(width,Math.ceil((wave.x+extent)*scale));
-      const top=Math.max(0,Math.floor((wave.y-extent)*scale)),bottom=Math.min(height,Math.ceil((wave.y+extent)*scale));
+      const centerX=wave.x-(scrollX-wave.scrollX),centerY=wave.y-(scrollY-wave.scrollY);
+      const left=Math.max(0,Math.floor((centerX-extent)*scale)),right=Math.min(width,Math.ceil((centerX+extent)*scale));
+      const top=Math.max(0,Math.floor((centerY-extent)*scale)),bottom=Math.min(height,Math.ceil((centerY+extent)*scale));
       for(let y=top;y<bottom;y++) for(let x=left;x<right;x++){
-        const dx=x/scale-wave.x,dy=y/scale-wave.y,d=Math.hypot(dx,dy);
+        const dx=x/scale-centerX,dy=y/scale-centerY,d=Math.hypot(dx,dy);
         if(d<1)continue;
         const envelope=Math.exp(-Math.pow((d-radius)/16,2));
         const force=Math.sin((d-radius)/5)*envelope*Math.pow(1-age,2)*36;
@@ -67,26 +69,43 @@
     targets.forEach(t=>{t.source.setAttribute('href',url);t.el.style.filter=`url(#${t.id})`;});
     frame=requestAnimationFrame(draw);
   }
-  document.addEventListener('pointermove',event=>{
-    if(!allowed()||event.pointerType==='touch')return;
-    const samples=event.getCoalescedEvents ? event.getCoalescedEvents() : [event];
-    for(const p of samples.length?samples:[event]){
+  function trace(samples) {
+    if (!allowed()) return;
+    for (const p of samples) {
       const point={x:p.clientX,y:p.clientY};
-      const distance=lastPoint?Math.hypot(point.x-lastPoint.x,point.y-lastPoint.y):0;
-      const count=Math.max(1,Math.ceil(distance/12));
-      for(let i=1;i<=Math.min(count,24);i++){
-        const t=i/Math.min(count,24);
-        waves.push({x:lastPoint?lastPoint.x+(point.x-lastPoint.x)*t:point.x,y:lastPoint?lastPoint.y+(point.y-lastPoint.y)*t:point.y,time:performance.now()});
+      const previous=lastPoint ? {x:lastPoint.x-(scrollX-lastPoint.scrollX),y:lastPoint.y-(scrollY-lastPoint.scrollY)} : null;
+      const distance=previous?Math.hypot(point.x-previous.x,point.y-previous.y):0;
+      const count=Math.min(24,Math.max(1,Math.ceil(distance/12)));
+      for(let i=1;i<=count;i++){
+        const t=i/count;
+        waves.push({x:previous?previous.x+(point.x-previous.x)*t:point.x,y:previous?previous.y+(point.y-previous.y)*t:point.y,time:performance.now(),scrollX,scrollY});
       }
-      lastPoint=point;
+      lastPoint={...point,scrollX,scrollY};
     }
-    waves=waves.slice(-48);
-    if(!frame){collect();frame=requestAnimationFrame(draw);}
+    waves=waves.slice(coarse.matches ? -32 : -48);
+    if(!frame){collect();needsCollect=false;frame=requestAnimationFrame(draw);}
+  }
+  document.addEventListener('pointermove',event=>{
+    // Touch events continue during native scrolling, after pointercancel.
+    if(event.pointerType==='touch')return;
+    const samples=event.getCoalescedEvents ? event.getCoalescedEvents() : [];
+    trace(samples.length?samples:[event]);
   },{passive:true});
+  document.addEventListener('touchstart',event=>{
+    lastPoint=null;
+    if(event.touches.length===1)trace([event.touches[0]]);
+  },{passive:true});
+  document.addEventListener('touchmove',event=>{
+    if(event.touches.length===1)trace([event.touches[0]]);
+    else lastPoint=null;
+  },{passive:true});
+  const endTouch=()=>{lastPoint=null;};
+  document.addEventListener('touchend',endTouch,{passive:true});
+  document.addEventListener('touchcancel',endTouch,{passive:true});
   window.addEventListener('resize',reset,{passive:true});
-  window.addEventListener('scroll',reset,{passive:true});
+  window.addEventListener('scroll',()=>{if(waves.length)needsCollect=true;},{passive:true});
   window.addEventListener('blur',reset);
-  document.documentElement.addEventListener('pointerleave',reset);
+  document.documentElement.addEventListener('pointerleave',event=>{if(event.pointerType!=='touch')reset();});
   document.addEventListener('visibilitychange',reset);
-  reduced.addEventListener('change',reset);fine.addEventListener('change',reset);
+  reduced.addEventListener('change',reset);coarse.addEventListener('change',reset);
 })();
