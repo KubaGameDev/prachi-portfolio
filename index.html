@@ -2,7 +2,7 @@
 <html lang="en-US">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
       <meta name="twitter:card" content="summary_large_image">
       <meta name="twitter:site" content="@AdobePortfolio">
       <meta property="og:title" content="Prachi Gaur">
@@ -11,8 +11,9 @@
       <link rel="stylesheet" href="assets/css/main-eda96c43fcf2.css" type="text/css">
       <link rel="stylesheet" href="assets/css/41035204ceaa746ca7ffac7e9bb8c9d11782842589-89cfe22bd70e.css" type="text/css">
     <title>Prachi Gaur</title>
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self' data: blob:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; media-src 'self' blob:; connect-src 'none'; frame-src 'none'; form-action 'none'; object-src 'none'"><link rel="stylesheet" href="assets/css/local.css?v=20261020-1"></head>
-  <body class="transition-enabled">  <div class="page-background-video page-background-video-with-panel">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' data: blob:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; media-src 'self' blob:; connect-src 'none'; frame-src 'none'; form-action 'none'; object-src 'none'"><link rel="stylesheet" href="assets/css/local.css?v=20261020-1">
+    <link rel="stylesheet" href="assets/css/ocean.css?v=20261020-1"></head>
+  <body data-ocean-home="true" class="transition-enabled">  <div class="page-background-video page-background-video-with-panel">
   </div>
   <div class="js-responsive-nav">
     <div class="responsive-nav has-social">
@@ -37,7 +38,42 @@
       </div>
     </div>
   </div>
-  <div class="site-wrap cfix">
+  <section class="ocean-hero" id="surface" tabindex="0" aria-label="Mermaid balancing game" aria-describedby="ocean-instructions">
+    <canvas class="ocean-surface-canvas" id="ocean-surface" aria-hidden="true"></canvas>
+    <header class="ocean-surface-header">
+      <a class="ocean-brand" href="index.html"><span class="ocean-brand-mark" aria-hidden="true">✳</span> Prachi Gaur Molewski</a>
+      <nav class="ocean-surface-nav" aria-label="Main navigation">
+        <a href="portfolio.html">Portfolio</a>
+        <a href="about.html">About</a>
+        <a href="contact.html">Contact <span aria-hidden="true">↗</span></a>
+      </nav>
+    </header>
+    <div class="ocean-introduction">
+      <p class="ocean-eyebrow">THE ART OF GOING WITH THE FLOW</p>
+      <h1>A little balance.<br><em>A world below.</em></h1>
+      <p class="ocean-description">Stay a while on the waves.<br>My world of art is just beneath the surface.</p>
+    </div>
+    <div class="ocean-hud" aria-label="Game controls and score">
+      <div class="ocean-scoreboard">
+        <div><span class="ocean-stat-label">ON THE WAVE</span><span class="ocean-stat-value"><output id="ocean-score">0.0</output><span class="ocean-stat-unit">s</span></span></div>
+        <div><span class="ocean-stat-label">PERSONAL BEST</span><span class="ocean-stat-value"><output id="ocean-best">0.0</output><span class="ocean-stat-unit">s</span></span></div>
+      </div>
+      <div class="ocean-balance-row">
+        <span class="ocean-meter-label">BALANCE</span>
+        <div id="ocean-balance" class="ocean-balance" role="meter" aria-label="Mermaid balance" aria-valuemin="-100" aria-valuemax="100" aria-valuenow="0" aria-valuetext="Centered"><span class="ocean-balance-marker"></span></div>
+      </div>
+      <p id="ocean-status" class="ocean-status" role="status" aria-live="polite">A little left, a little right. Find your balance.</p>
+      <p id="ocean-instructions" class="ocean-instructions"><span class="ocean-desktop-instruction">Move your mouse to balance · ← → or A / D</span><span class="ocean-touch-instruction">Slide your thumb to balance · Swipe up firmly to dive</span></p>
+      <button id="ocean-play" class="ocean-play" type="button">Play / resume <span aria-hidden="true">↗</span></button>
+    </div>
+    <div class="ocean-dive">
+      <a id="ocean-dive-link" class="ocean-dive-link" href="#underwater"><span>Dive into portfolio</span><span class="ocean-dive-arrow" aria-hidden="true">↓</span></a>
+      <span class="ocean-dive-hint">A LITTLE WONDER AWAITS</span>
+    </div>
+    <div id="ocean-dive-progress" class="ocean-dive-progress" aria-hidden="true"><span></span></div>
+    <noscript><p class="ocean-fallback-note">Explore the portfolio below. Enable JavaScript to play on the waves.</p></noscript>
+  </section>
+  <div class="site-wrap cfix" id="underwater">
     <div class="site-container">
       <div class="site-content e2e-site-content">
           <header class="site-header js-site-header " data-context="theme.nav" data-hover-hint="nav" data-hover-hint-placement="top-start">
@@ -198,5 +234,7 @@
       </div>
     </div>
   </div>
-<script src="assets/js/local.js?v=20261020-1" defer></script><script src="assets/js/cursor-trail.js" defer></script></body>
+<script src="assets/js/ocean-core.js?v=20261020-1" defer></script>
+<script src="assets/js/ocean.js?v=20261020-1" defer></script>
+<script src="assets/js/local.js?v=20261020-ocean1" defer></script><script src="assets/js/cursor-trail.js?v=20261020-ocean1" defer></script></body>
 </html>
