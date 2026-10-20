@@ -424,9 +424,20 @@ body[data-ocean-home] .site-wrap :focus-visible { outline-color: #8d712c; }
   text-align: center;
   text-shadow: 0 1px 3px #0c4d60, 0 0 7px #0c4d60;
 }
-.ocean-hud .ocean-balance-row { position: static; display: block; order: -1; width: 100%; margin: 0 0 10px; }
-.ocean-hud .ocean-meter-label { display: block; margin-bottom: 6px; font-size: 8px; line-height: 1; }
-.ocean-hud .ocean-balance { width: 100%; height: 5px; }
+.ocean-hud .ocean-balance-row { position: static; display: block; order: -1; width: 100%; margin: 0 0 6px; }
+.ocean-hud .ocean-balance-caption { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.ocean-hud .ocean-meter-label { display: block; margin: 0; font-size: 8px; line-height: 1; }
+.ocean-balance-legend { display: flex; align-items: center; gap: 12px; font: 10px/1.2 Arial, sans-serif; }
+.ocean-balance-legend > span { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.ocean-balance-legend > span::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #ffce6a; }
+.ocean-balance-legend .ocean-legend-input::before { width: 9px; height: 9px; box-sizing: border-box; border: 2px solid #a7f0e4; background: transparent; }
+.ocean-hud .ocean-balance { width: 100%; height: 5px; margin: 13px 0 12px; background: linear-gradient(90deg, #aa8059, #9fccc0 34%, #9fccc0 66%, #aa8059); }
+.ocean-balance-center { position: absolute; left: 41.72%; width: 16.56%; top: -5px; height: 15px; border: 1px solid rgba(205, 250, 231, .5); border-radius: 7px; background: rgba(174, 235, 209, .22); box-sizing: border-box; }
+.ocean-balance-offset { position: absolute; left: 50%; width: 0; height: 100%; border-radius: inherit; background: #ffce6a; }
+.ocean-hud .ocean-balance-marker { width: 10px; height: 10px; border: 1px solid #153f48; background: #ffce6a; box-shadow: 0 0 0 1px rgba(255, 228, 164, .5); }
+.ocean-input-marker { position: absolute; left: 50%; top: 50%; z-index: 2; width: 22px; height: 22px; box-sizing: border-box; border: 2px solid #a7f0e4; border-radius: 50%; background: transparent; box-shadow: 0 0 0 1px rgba(8, 54, 64, .7), inset 0 0 0 1px rgba(8, 54, 64, .5); transform: translate(-50%, -50%); }
+.ocean-hud .ocean-balance.is-danger .ocean-balance-marker, .ocean-balance.is-danger .ocean-balance-offset { background: #ffab71; }
+.ocean-balance-cue { min-height: 13px; margin: 0; color: #e8f9e9; font: 10px/1.3 Arial, sans-serif; letter-spacing: .025em; }
 .ocean-hud .ocean-scoreboard { justify-content: center; gap: 36px; margin: 0 0 5px; }
 .ocean-hud .ocean-scoreboard > div { align-items: center; gap: 3px; }
 .ocean-hud .ocean-stat-label { font-size: 8px; }
@@ -479,8 +490,10 @@ body[data-ocean-home] .site-wrap :focus-visible { outline-color: #8d712c; }
   .ocean-guide-keys kbd { width: 20px; height: 21px; font-size: 9px; }
   .ocean-hero .ocean-hud { width: min(47vw, 340px); }
   .ocean-hud .ocean-balance-row { margin-bottom: 5px; }
-  .ocean-hud .ocean-meter-label { font-size: 7px; margin-bottom: 4px; }
-  .ocean-hud .ocean-balance { height: 4px; }
+  .ocean-hud .ocean-meter-label { font-size: 7px; }
+  .ocean-hud .ocean-balance { height: 4px; margin: 11px 0 10px; }
+  .ocean-balance-legend { font-size: 9px; gap: 8px; }
+  .ocean-balance-cue { font-size: 9px; min-height: 12px; }
   .ocean-hud .ocean-scoreboard { margin-bottom: 2px; gap: 27px; }
   .ocean-hud .ocean-scoreboard > div { gap: 1px; }
   .ocean-hud .ocean-stat-label { font-size: 7px; }

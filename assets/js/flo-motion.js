@@ -9,9 +9,9 @@
   var constants = Object.freeze({
     FIXED_DT: 1 / 120,
     MAX_FRAME_DT: 0.1,
-    HESITATION_SECONDS: 0.28,
-    LOOK_SECONDS: 0.48,
-    SETTLE_SECONDS: 0.28,
+    HESITATION_SECONDS: 0.44,
+    LOOK_SECONDS: 0.62,
+    SETTLE_SECONDS: 0.38,
     FOLLOW_DISTANCE: 48,
     LOOK_DISTANCE: 4,
     SPRING: 25,
@@ -38,6 +38,8 @@
    *
    * States: resting, looking, anticipating, swimming, settling.
    * direction: -1 is up, +1 is down. energy is a smoothed 0..1 swim intensity.
+   * anticipation is read-only 0..1 progress through the glance/hold/windup beat
+   * (zero outside anticipating). Its clock advances only when step advances.
    */
   function Companion(options) {
     options = options || {};
@@ -45,6 +47,13 @@
     this.maxY = Math.max(this.minY, finite(options.maxY, 800));
     this.reset(finite(options.y, (this.minY + this.maxY) / 2));
   }
+
+  Object.defineProperty(Companion.prototype, 'anticipation', {
+    get: function () {
+      return this.state === 'anticipating' ?
+        clamp(this.stateTime / constants.HESITATION_SECONDS, 0, 1) : 0;
+    }
+  });
 
   Companion.prototype.reset = function (y) {
     this.y = clamp(finite(y, (this.minY + this.maxY) / 2), this.minY, this.maxY);
@@ -135,6 +144,11 @@
     // display rates, and prevent a resumed/hidden tab from making Flo jump.
     while (remaining > 0.0000001) {
       var step = Math.min(remaining, constants.FIXED_DT);
+      // Finish a timed hold at its exact boundary, rather than borrowing part
+      // of the last anticipation frame for the first swimming movement.
+      var hold = this.state === 'anticipating' ? constants.HESITATION_SECONDS :
+        this.state === 'looking' ? constants.LOOK_SECONDS : 0;
+      if (hold) step = Math.min(step, Math.max(0.0000001, hold - this.stateTime));
       this._advance(step);
       remaining -= step;
     }
@@ -142,14 +156,6 @@
 
   Companion.prototype._advance = function (dt) {
     this.stateTime += dt;
-    if (this.state === 'anticipating' &&
-        this.stateTime + 0.0000001 >= constants.HESITATION_SECONDS) {
-      this._changeState('swimming');
-    } else if (this.state === 'looking' &&
-        this.stateTime + 0.0000001 >= constants.LOOK_SECONDS) {
-      this._changeState('resting');
-    }
-
     var moving = this.state === 'swimming' || this.state === 'settling';
     var destination = this.state === 'anticipating' ? this._anchorY : this.targetY;
     if (moving || Math.abs(this.velocity) > 0 || Math.abs(destination - this.y) > 0.001) {
@@ -174,6 +180,14 @@
     var targetEnergy = moving ? clamp(speed / 250, 0, 1) : 0;
     this.energy += (targetEnergy - this.energy) * (1 - Math.exp(-dt * 7));
     if (this.energy < 0.0001) this.energy = 0;
+
+    if (this.state === 'anticipating' &&
+        this.stateTime + 0.0000001 >= constants.HESITATION_SECONDS) {
+      this._changeState('swimming');
+    } else if (this.state === 'looking' &&
+        this.stateTime + 0.0000001 >= constants.LOOK_SECONDS) {
+      this._changeState('resting');
+    }
   };
 
   return { Companion: Companion, constants: constants };

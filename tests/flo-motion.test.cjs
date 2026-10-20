@@ -19,7 +19,9 @@ test('small pointer movements look briefly without shifting the resting perch', 
   flo.point(425);
   assert.equal(flo.state, 'looking');
   assert.equal(flo.direction, 1);
-  simulate(flo, 1);
+  simulate(flo, constants.LOOK_SECONDS - constants.FIXED_DT);
+  assert.equal(flo.state, 'looking');
+  simulate(flo, constants.FIXED_DT * 2);
   assert.equal(flo.state, 'resting');
   assert.equal(flo.y, 400);
   assert.equal(flo.targetY, 400);
@@ -31,11 +33,14 @@ test('Flo hesitates once, swims with bounded speed, then rests at cursor height'
   const flo = companion();
   flo.point(100);
   assert.equal(flo.state, 'anticipating');
-  simulate(flo, 0.25);
+  assert.equal(flo.anticipation, 0);
+  simulate(flo, constants.HESITATION_SECONDS - constants.FIXED_DT * 2);
   assert.equal(flo.y, 400);
   assert.equal(flo.velocity, 0);
-  simulate(flo, 0.1);
+  assert.ok(flo.anticipation > 0.9 && flo.anticipation < 1);
+  simulate(flo, constants.FIXED_DT * 4);
   assert.equal(flo.state, 'swimming');
+  assert.equal(flo.anticipation, 0);
   assert.ok(flo.y < 400);
   assert.equal(flo.direction, -1);
   assert.ok(flo.energy > 0);
@@ -55,7 +60,8 @@ test('Flo hesitates once, swims with bounded speed, then rests at cursor height'
 test('continuous pointer updates do not restart anticipation or interrupt swimming', () => {
   const flo = companion();
   flo.point(100);
-  for (let i = 0; i < 20; i++) {
+  const updates = Math.ceil((constants.HESITATION_SECONDS + 0.05) * 60);
+  for (let i = 0; i < updates; i++) {
     flo.point(100 + i);
     flo.step(1 / 60);
   }
@@ -69,12 +75,54 @@ test('continuous pointer updates do not restart anticipation or interrupt swimmi
   assert.equal(flo.direction, 1);
 });
 
+test('a late reversal keeps the original departure clock and launches toward the latest target', () => {
+  const flo = companion();
+  flo.point(100);
+  const remaining = constants.FIXED_DT * 3;
+  simulate(flo, constants.HESITATION_SECONDS - remaining);
+  const progress = flo.anticipation;
+  const stateTime = flo.stateTime;
+  flo.point(650);
+  assert.equal(flo.stateTime, stateTime);
+  assert.equal(flo.anticipation, progress);
+  assert.equal(flo.direction, 1);
+  simulate(flo, remaining - constants.FIXED_DT);
+  assert.equal(flo.state, 'anticipating');
+  assert.equal(flo.y, 400);
+  simulate(flo, constants.FIXED_DT * 2);
+  assert.equal(flo.state, 'swimming');
+  assert.ok(flo.y > 400);
+  assert.equal(flo.targetY, 650);
+});
+
+test('holding the simulation clock preserves anticipation until the caller resumes', () => {
+  const flo = companion();
+  flo.point(100);
+  simulate(flo, constants.HESITATION_SECONDS / 2);
+  const stateTime = flo.stateTime;
+  const progress = flo.anticipation;
+  // A paused renderer may still repaint or accept a new target, but neither
+  // input nor a zero-duration frame consumes the remaining thought beat.
+  flo.point(650);
+  for (let frame = 0; frame < 120; frame++) flo.step(0);
+  assert.equal(flo.state, 'anticipating');
+  assert.equal(flo.stateTime, stateTime);
+  assert.equal(flo.anticipation, progress);
+  assert.equal(flo.y, 400);
+  assert.equal(flo.velocity, 0);
+  assert.equal(flo.energy, 0);
+  simulate(flo, constants.HESITATION_SECONDS - stateTime + constants.FIXED_DT);
+  assert.equal(flo.state, 'swimming');
+  assert.ok(flo.y > 400);
+});
+
 test('a pointer returning nearby during hesitation cancels the departure', () => {
   const flo = companion();
   flo.point(100);
-  simulate(flo, 0.15);
+  simulate(flo, constants.HESITATION_SECONDS / 2);
   flo.point(420);
-  simulate(flo, 1);
+  assert.equal(flo.anticipation, 0);
+  simulate(flo, constants.LOOK_SECONDS + constants.FIXED_DT);
   assert.equal(flo.y, 400);
   assert.equal(flo.targetY, 400);
   assert.equal(flo.state, 'resting');
@@ -131,6 +179,20 @@ test('frame-rate changes preserve the trajectory and a long frame is capped', ()
   bounded.step(constants.MAX_FRAME_DT);
   assert.equal(long.y, bounded.y);
   assert.equal(long.stateTime, bounded.stateTime);
+});
+
+test('the full anticipation hold is respected at each display rate before launch', () => {
+  for (const hz of [30, 60, 120, 144]) {
+    const flo = companion();
+    flo.point(70);
+    simulate(flo, constants.HESITATION_SECONDS, 1 / hz);
+    assert.equal(flo.state, 'swimming');
+    assert.equal(flo.y, 400, `${hz}Hz must not borrow anticipation time for movement`);
+    assert.equal(flo.velocity, 0);
+    flo.step(constants.FIXED_DT);
+    assert.ok(flo.y < 400);
+    assert.ok(flo.velocity < 0);
+  }
 });
 
 test('reset and invalid input leave a finite, stationary, bounded companion', () => {

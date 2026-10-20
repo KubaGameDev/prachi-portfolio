@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { BalanceGame, getBalancePose, TiltInput, TouchIntent, WheelIntent, constants } = require('../assets/js/ocean-core.js');
+const { BalanceGame, getBalancePose, getBalanceFeedback, TiltInput, TouchIntent, WheelIntent, constants } = require('../assets/js/ocean-core.js');
 
 function simulate(game, duration, input = 0, dt = 1 / 120) {
   const frames = Math.round(duration / dt);
@@ -178,6 +178,63 @@ test('wheel normalizes line/page units and rejects horizontal gestures', () => {
   assert.equal(wheel.feed({ deltaY: 0.1, deltaMode: 2 }, 0, 800).commit, true);
   wheel.reset();
   assert.equal(wheel.feed({ deltaX: 50, deltaY: 60 }, 0, 800).qualifies, true);
+});
+
+test('balance feedback counteracts either lean regardless of the held input direction', () => {
+  assert.equal(getBalanceFeedback(0.55, 0.2, 0), 'Counter left');
+  assert.equal(getBalanceFeedback(-0.55, -0.2, 0), 'Counter right');
+  assert.equal(getBalanceFeedback(0.55, 0.2, 1), 'Counter left',
+    'matching the input marker to a right lean must not be rewarded');
+  assert.equal(getBalanceFeedback(-0.55, -0.2, -1), 'Counter right');
+  assert.equal(getBalanceFeedback(0.55, 0.2, -1), 'Counter left',
+    'keep correcting while Flo is still drifting outward');
+});
+
+test('balance feedback asks for release before a recovering lean reaches center', () => {
+  assert.equal(getBalanceFeedback(0.30, -0.80, -1), 'Ease off');
+  assert.equal(getBalanceFeedback(-0.30, 0.80, 1), 'Ease off');
+  assert.equal(getBalanceFeedback(0.8, -2, -1), 'Ease off',
+    'a large lean can already have enough inward momentum');
+  assert.equal(getBalanceFeedback(0.6, -0.3, -1), 'Counter left',
+    'slow recovery far from center still needs correction');
+});
+
+test('balance feedback brakes rapid overshoot rather than blindly opposing the current lean', () => {
+  assert.equal(getBalanceFeedback(0.20, -1.4, -1), 'Counter right');
+  assert.equal(getBalanceFeedback(-0.20, 1.4, 1), 'Counter left');
+  assert.equal(getBalanceFeedback(0, 0.8, 0), 'Counter left',
+    'passing through center at speed is not stable');
+  assert.equal(getBalanceFeedback(0, -0.8, 0), 'Counter right');
+});
+
+test('balance feedback distinguishes a settled center from unnecessary held force', () => {
+  assert.equal(getBalanceFeedback(0, 0, 0), 'Steady');
+  assert.equal(getBalanceFeedback(0.1, 0.1, 0.05), 'Steady');
+  assert.equal(getBalanceFeedback(0.1, 0.1, 1), 'Ease off');
+  assert.equal(getBalanceFeedback(-0.1, -0.1, -1), 'Ease off');
+  assert.equal(getBalanceFeedback(0.25, -0.4, 0), 'Steady',
+    'coasting toward center does not require a new input');
+});
+
+test('balance feedback remains symmetric under mirrored motion and input', () => {
+  const mirrored = { 'Counter left': 'Counter right', 'Counter right': 'Counter left',
+    'Ease off': 'Ease off', Steady: 'Steady' };
+  for (const sample of [[0, 0, 0], [0.1, 0.1, 1], [0.3, -0.8, -1],
+    [0.2, -1.4, -1], [0.55, 0.2, 1], [0, 0.8, 0], [0.25, -0.4, 0]]) {
+    const result = getBalanceFeedback(...sample);
+    assert.equal(getBalanceFeedback(...sample.map(value => -value)), mirrored[result]);
+  }
+});
+
+test('balance feedback safely handles missing, non-finite and excessive inputs', () => {
+  assert.equal(getBalanceFeedback(), 'Steady');
+  assert.equal(getBalanceFeedback(NaN, Infinity, -Infinity), 'Steady');
+  assert.equal(getBalanceFeedback('0.9', null, undefined), 'Steady');
+  assert.equal(getBalanceFeedback(NaN, 0.8, 0), 'Counter left',
+    'valid motion still informs the cue when lean is unavailable');
+  assert.equal(getBalanceFeedback(-0.5, Infinity, NaN), 'Counter right');
+  assert.equal(getBalanceFeedback(0.3, -0.8, -100), 'Ease off');
+  assert.equal(getBalanceFeedback(0.3, -0.8, 100), getBalanceFeedback(0.3, -0.8, 1));
 });
 
 test('balance poses remain neutral near the center even during strong correction', () => {

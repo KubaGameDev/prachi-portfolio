@@ -79,6 +79,11 @@
   let companionReady = false, lastScrollY = 0, pointerHeight = null;
   let swimPhase = 0, companionFrame = 8, companionRotation = 0;
   let balanceReady = false, recoveryTime = 0;
+  let surfTravel = 0, surfSpeed = 0.42;
+  let appliedInput = 0, canStepGame = false, balanceCue = 'Keep Flo centered';
+  let pendingCue = balanceCue, pendingCueSince = 0, cueWasActive = false;
+  // A quick fin push followed by a longer, floating recovery; one full stroke.
+  const swimFrameEnds = [0.13, 0.24, 0.32, 0.40, 0.51, 0.65, 0.82, 1];
   let companionPosition = { x: innerWidth - 56, y: innerHeight * 0.56, width: 112 };
   const pointers = new Set();
   const keys = new Set();
@@ -86,6 +91,9 @@
   const bestEl = document.getElementById('ocean-best');
   const meter = document.getElementById('ocean-balance');
   const marker = meter?.querySelector('.ocean-balance-marker');
+  const inputMarker = meter?.querySelector('.ocean-input-marker');
+  const balanceOffset = meter?.querySelector('.ocean-balance-offset');
+  const balanceCueEl = document.getElementById('ocean-balance-cue');
   const status = document.getElementById('ocean-status');
   const play = document.getElementById('ocean-play');
   const progress = document.getElementById('ocean-dive-progress');
@@ -188,8 +196,10 @@
     getCompanion: () => ({
       ...companionPosition, targetY: companion?.targetY ?? companionPosition.y,
       velocity: companion?.velocity || 0, state: companion?.state || 'resting',
-      frame: companionFrame
+      frame: companionFrame, anticipation: companion?.anticipation || 0
     }),
+    getBalanceFeedback: () => ({ lean: game.lean, velocity: game.velocity,
+      input: appliedInput, state: game.state, cue: balanceCue }),
     getSurfGeometry: () => surfGeometry(clock)
   };
   function targetTop(el) {
@@ -516,7 +526,7 @@
     if (!playable() || port.scrollTop > 8 || dive) return;
     if (game.state !== 'ready') return;
     game.start();
-    setStatus('Follow the waves. Keep the gold marker in the middle.');
+    setStatus('Small opposite corrections, then ease off.');
     wake();
   }
   play?.addEventListener('click', () => {
@@ -671,7 +681,9 @@
     return {
       x: surfaceActor.x,
       crestY: surfaceActor.y + riderHeight * 0.28 + bob,
-      width, height: width / 1.6, bob
+      width, height: width / 1.6, bob,
+      travel: surfTravel, speed: motion.matches ? 0 : surfSpeed,
+      forwardLean: motion.matches ? 0 : surfSpeed * 0.03
     };
   }
   function resize() {
@@ -882,22 +894,17 @@
     sea.addColorStop(0.65, '#248a99'); sea.addColorStop(1, '#156574');
     ctx.fillStyle = sea; ctx.fillRect(0, horizon, w, h - horizon);
     ctx.fillStyle = '#f8f0d8aa'; ctx.fillRect(0, horizon, w, 1.5);
-    // Glints move from the horizon toward the viewer instead of blinking in place.
-    for (let i = 0; i < 24; i++) {
-      const p = (i / 24 + t * 0.024) % 1, y = horizon + p * p * h * 0.29;
-      const length = (12 + p * 95) * (0.65 + 0.35 * Math.sin(i * 7.2));
-      const x = sunX + Math.sin(i * 4.3) * (5 + p * 65);
-      ctx.strokeStyle = `rgba(255,239,184,${0.35 * Math.sin(p * Math.PI)})`;
-      ctx.lineWidth = 1.2 + p * 1.6;
-      ctx.beginPath(); ctx.moveTo(x - length, y); ctx.lineTo(x + length, y); ctx.stroke();
-    }
+    // A separate, continuous travel clock eases into the ride on play. Distant
+    // glints move slowly; nearby foam slips down-left, behind the rightward curl.
+    const travel = motion.matches ? 0 : surfTravel;
+    const flow = t * 0.018 + travel * 0.12;
     const bands = [
       [0.575, 4, '#76bdc0', 0.36], [0.63, 9, '#4eacb4', 0.5],
       [0.71, 15, '#369bab', 0.68], [0.80, 21, '#57b5ba', 0.82],
       [0.89, 18, '#1c8190', 0.7]
     ];
     bands.forEach(([level, amp, color, speed], index) => {
-      const y = h * level, phase = t * speed + index * 2.1;
+      const y = h * level, phase = t * speed * 0.28 + travel * speed * 1.55 + index * 2.1;
       ctx.beginPath();
       ctx.moveTo(-5, waveY(0, y, amp, phase, w));
       for (let x = 0; x <= w + 16; x += 16) ctx.lineTo(x, waveY(x, y, amp, phase, w));
@@ -911,38 +918,49 @@
       ctx.strokeStyle = index === 3 ? '#d1eee0aa' : '#d1eee056';
       ctx.lineWidth = index === 3 ? 2.5 : 1.2; ctx.stroke();
     });
+    // Draw reflections over the opaque sea bands so their slow forward flow
+    // remains visible between the faster foreground streaks.
+    for (let i = 0; i < 24; i++) {
+      const p = (i / 24 + t * 0.012 + travel * 0.022) % 1, y = horizon + p * p * h * 0.29;
+      const length = (12 + p * 95) * (0.65 + 0.35 * Math.sin(i * 7.2));
+      const x = sunX + Math.sin(i * 4.3) * (5 + p * 65) - p * p * 26;
+      ctx.strokeStyle = `rgba(255,239,184,${0.28 * Math.sin(p * Math.PI)})`;
+      ctx.lineWidth = 1.2 + p * 1.6;
+      ctx.beginPath(); ctx.moveTo(x - length, y); ctx.lineTo(x + length, y); ctx.stroke();
+    }
     const surf = surfGeometry(t);
-    // Perspective foam moves past the rider, faster and wider in the foreground.
-    // Fixed seeds and bounded loops keep this flow stable across frames.
-    for (let i = 0; i < 34; i++) {
-      const p = (i * 0.61803398875 + t * (0.07 + i % 3 * 0.008)) % 1;
+    // Foam streams toward the lower-left as the camera travels with Flo.
+    // Quadratic depth gives nearby streaks more speed and length than distant
+    // ones. They fade at the loop seam instead of visibly wrapping on screen.
+    for (let i = 0; i < 40; i++) {
+      const p = (i * 0.61803398875 + flow * (1 + i % 3 * 0.07)) % 1;
       const depth = p * p;
-      const lane = ((i * 47) % 101) / 100 - 0.5;
+      const lane = ((i * 47) % 101) / 100;
       const y = horizon + depth * (h - horizon);
-      const x = surf.x + lane * (w * 0.22 + depth * w * 1.55);
-      const length = 3 + depth * (18 + i % 5 * 8);
-      const alpha = Math.sin(p * Math.PI) * (0.12 + depth * 0.22);
+      const x = lane * w * 1.65 - w * 0.06 - depth * w * 0.48;
+      const length = 4 + depth * (28 + i % 5 * 9);
+      const alpha = Math.sin(p * Math.PI) * (0.18 + depth * 0.28);
       ctx.strokeStyle = `rgba(205,239,224,${alpha})`;
-      ctx.lineWidth = 0.7 + depth * 1.3;
+      ctx.lineWidth = 0.7 + depth * 1.5;
       ctx.beginPath();
-      ctx.moveTo(x - length, y);
-      ctx.quadraticCurveTo(x, y - 1.5 - depth * 2, x + length, y + depth * 1.5);
+      ctx.moveTo(x + length * 0.55, y - length * 0.12);
+      ctx.quadraticCurveTo(x, y - 1.5, x - length * 0.55, y + length * 0.12);
       ctx.stroke();
     }
     // Flo and the wave share one crest contact and the same subtle root motion.
-    drawSurfWave(ctx, surf.x, surf.crestY, surf.width, surf.height, t);
-    // Dissolving surface ripples cross the submerged base, tying it into the sea.
-    // Their entire path stays inside the wave's allocated height above the HUD.
-    for (let i = 0; i < 5; i++) {
-      const p = (t * 0.19 + i * 0.213) % 1;
-      const y = surf.crestY + surf.height * (0.83 + p * 0.15);
-      const x = surf.x - surf.width * (0.12 + p * 0.16);
-      const length = surf.width * (0.12 + p * 0.19);
-      ctx.strokeStyle = `rgba(165,224,210,${Math.sin(p * Math.PI) * 0.24})`;
-      ctx.lineWidth = 1 + p * 0.4;
+    drawSurfWave(ctx, surf.x, surf.crestY, surf.width, surf.height, t * 0.55 + travel * 1.15);
+    // A spreading wake peels off the shoulder and trails down-left into the
+    // water. Its whole route remains within the wave's space above the HUD.
+    for (let i = 0; i < 7; i++) {
+      const p = (t * 0.06 + travel * 0.43 + i / 7) % 1;
+      const y = surf.crestY + surf.height * (0.73 + p * 0.24);
+      const x = surf.x - surf.width * (0.11 + p * 0.37);
+      const length = surf.width * (0.035 + p * 0.11);
+      ctx.strokeStyle = `rgba(202,242,225,${Math.sin(p * Math.PI) * 0.48})`;
+      ctx.lineWidth = 0.8 + p * 1.3;
       ctx.beginPath();
-      ctx.moveTo(x - length, y);
-      ctx.quadraticCurveTo(x, y - surf.height * 0.012, x + length, y);
+      ctx.moveTo(x + length, y - surf.height * 0.025);
+      ctx.quadraticCurveTo(x, y - surf.height * 0.012, x - length, y + surf.height * 0.014);
       ctx.stroke();
     }
     // A clear front lip reveals the underwater world before the first dive.
@@ -1046,7 +1064,11 @@
       actorCtx.save();
       actorCtx.globalAlpha = alpha;
       actorCtx.translate(x, y);
+      // Incline into forward travel around the tail contact, rather than
+      // swinging the contact off the crest when Flo changes her balance.
+      actorCtx.translate(0, height * 0.28);
       actorCtx.rotate(rotation);
+      actorCtx.translate(0, -height * 0.28);
       actorCtx.scale(direction, 1);
       const breath = breathAmount(t);
       actorCtx.translate(0, height * 0.28);
@@ -1078,6 +1100,12 @@
     if (touchId !== null) return input;
     return tiltEnabled ? tilt.read(performance.now()) : input;
   }
+  function anticipationWindup() {
+    // First notice and hold the thought. The small counter-motion occupies
+    // only the final part of the beat and releases before continuous travel.
+    const progress = clamp(((companion?.anticipation || 0) - 0.52) / 0.48);
+    return Math.sin(Math.PI * ease(progress));
+  }
   function drawCompanion(x, y, width, alpha, t) {
     if (!alpha) return;
     const state = companion?.state || 'resting';
@@ -1085,18 +1113,20 @@
       // Visual samples run separately from continuous root movement.
       // Eight ordered swim drawings, then rest / look up / look down / blink.
       const moving = state === 'swimming' || (state === 'settling' && companion.energy > 0.12);
-      companionFrame = moving ? Math.floor(swimPhase) % 8 :
+      companionFrame = moving ? swimFrameEnds.findIndex(end => swimPhase < end) :
         state === 'anticipating' || state === 'looking' ? (companion.direction < 0 ? 9 : 10) :
         t % 5.7 > 5.52 ? 11 : 8;
       const sw = companionArt.naturalWidth / 4, sh = companionArt.naturalHeight / 3;
       const height = width * sh / sw;
+      const windup = anticipationWindup();
+      y -= (companion?.direction || 1) * windup * width * 0.022;
       actorCtx.save();
       actorCtx.globalAlpha = alpha;
       actorCtx.translate(x, y);
       actorCtx.rotate(companionRotation);
       const breath = moving ? 0 : breathAmount(t);
       actorCtx.translate(0, height * 0.2);
-      actorCtx.scale(1 + breath * 0.004, 1 + breath * 0.008);
+      actorCtx.scale(1 + breath * 0.004 + windup * 0.008, 1 + breath * 0.008 - windup * 0.015);
       actorCtx.translate(0, -height * 0.2);
       actorCtx.drawImage(companionArt, companionFrame % 4 * sw,
         Math.floor(companionFrame / 4) * sh, sw, sh, -width / 2, -height / 2, width, height);
@@ -1124,7 +1154,10 @@
     let x = mix(surfaceActor.x, destination.x, q);
     let y = mix(surfaceActor.y, destination.y, q);
     let width = mix(initialWidth, destination.width, q);
-    let rotation = (1 - q) * game.lean * 0.14;
+    const surfing = game.state === 'ready' || game.state === 'balancing';
+    // Actual balance takes precedence over the small neutral surfing posture.
+    const forwardLean = surfing ? surfGeometry(t).forwardLean * clamp(1 - Math.abs(game.lean) / 0.3) : 0;
+    let rotation = (1 - q) * (game.lean * 0.14 + forwardLean);
     const bob = motion.matches ? 0 : mix(surfGeometry(t).bob, Math.sin(t * 1.5) * 1.5, q);
     y += bob;
     let pose = 'balance', direction = 1, opacity = 1;
@@ -1138,7 +1171,7 @@
         const f = clamp(game.stateTime);
         pose = 'rise'; y += (1 - f) * 55; opacity = f;
       } else if (game.state === 'balancing') {
-        const balance = Core.getBalancePose(game.lean, game.velocity, playerInput());
+        const balance = Core.getBalancePose(game.lean, game.velocity, appliedInput);
         if (balance.weight > 0.2) {
           pose = balance.pose;
           direction = balance.direction;
@@ -1164,19 +1197,40 @@
     drawCompanion(x, y, width, blend, t);
   }
   function updateHud(now) {
-    if (!home || now - lastHud < 100) return;
+    if (!home) return;
+    const lean = clamp(game.lean, -1, 1);
+    // Input must feel immediate. Neither marker waits on score/text updates
+    // or uses a CSS transition that would hide the relationship to momentum.
+    marker.style.left = `${50 + lean * 46}%`;
+    inputMarker.style.left = `${50 + appliedInput * 46}%`;
+    balanceOffset.style.left = `${50 + Math.min(lean, 0) * 46}%`;
+    balanceOffset.style.width = `${Math.abs(lean) * 46}%`;
+    meter.classList.toggle('is-danger', Math.abs(lean) > 0.72);
+    const cueActive = canStepGame && game.state === 'balancing';
+    const nextCue = cueActive ? Core.getBalanceFeedback(game.lean, game.velocity, appliedInput) :
+      isPaused() ? 'Paused' : 'Keep Flo centered';
+    if (nextCue !== pendingCue) { pendingCue = nextCue; pendingCueSince = now; }
+    // Stabilize small changes in advice, but do not delay the first cue,
+    // pause state or an urgent correction near the edge of balance.
+    if (!cueActive || !cueWasActive || Math.abs(lean) > 0.72 || now - pendingCueSince >= 180) {
+      if (balanceCue !== nextCue) {
+        balanceCue = nextCue;
+        balanceCueEl.textContent = balanceCue;
+      }
+    }
+    cueWasActive = cueActive;
+    if (now - lastHud < 100 && !isPaused()) return;
     lastHud = now;
     scoreEl.textContent = game.elapsed.toFixed(1);
     bestEl.textContent = Math.max(game.best, game.state === 'balancing' ? game.elapsed : 0).toFixed(1);
-    const lean = clamp(game.lean, -1, 1);
-    marker.style.left = `${50 + lean * 46}%`;
     meter.setAttribute('aria-valuenow', String(Math.round(lean * 100)));
-    meter.setAttribute('aria-valuetext', Math.abs(lean) < 0.2 ? 'Centered' : `Leaning ${lean < 0 ? 'left' : 'right'}`);
-    meter.classList.toggle('is-danger', Math.abs(lean) > 0.72);
+    const leanText = Math.abs(lean) < 0.18 ? 'Flo centered' : `Flo leaning ${lean < 0 ? 'left' : 'right'} ${Math.round(Math.abs(lean) * 100)} percent`;
+    const inputText = Math.abs(appliedInput) < 0.02 ? 'your correction neutral' : `your correction ${appliedInput < 0 ? 'left' : 'right'} ${Math.round(Math.abs(appliedInput) * 100)} percent`;
+    meter.setAttribute('aria-valuetext', `${leanText}; ${inputText}; ${balanceCue}`);
     if (game.state !== lastState) {
       if (game.state === 'falling') setStatus('Splash! Every wave is a fresh start.');
       if (game.state === 'resurfacing') setStatus('Coming back up…');
-      if (game.state === 'balancing') setStatus('Find your balance. The ocean is on your side.');
+      if (game.state === 'balancing') setStatus('Small opposite corrections, then ease off.');
       lastState = game.state;
       saveBest();
     }
@@ -1187,18 +1241,25 @@
     const elapsedMs = lastTime ? now - lastTime : 16;
     lastTime = now;
     if (elapsedMs < 120) frameAverage = frameAverage * 0.97 + elapsedMs * 0.03;
-    if (effectsEnabled()) clock += dt;
+    if (effectsEnabled()) {
+      clock += dt;
+      if (home && !underwater) {
+        const targetSpeed = game.state === 'balancing' ? 1 : game.state === 'ready' ? 0.42 : 0.6;
+        surfSpeed += (targetSpeed - surfSpeed) * (1 - Math.exp(-dt * 2.4));
+        surfTravel += dt * surfSpeed;
+      }
+    }
     if (!isPaused()) recoveryTime = Math.max(0, recoveryTime - dt);
     if (effectsEnabled() && underwater && companion) {
       const previousState = companion.state;
       companion.step(dt);
       if (previousState === 'anticipating' && companion.state === 'swimming') swimPhase = 0;
       if (companion.state === 'swimming' || companion.state === 'settling') {
-        swimPhase += dt * (10 + companion.energy * 6);
+        swimPhase = (swimPhase + dt * (1.15 + companion.energy * 0.7)) % 1;
       }
       const pitch = (companion.state === 'swimming' || companion.state === 'settling') ?
         -companion.direction * companion.energy * 0.48 :
-        companion.state === 'anticipating' ? companion.direction * 0.06 : 0;
+        companion.state === 'anticipating' ? companion.direction * 0.1 * anticipationWindup() : 0;
       companionRotation += (pitch - companionRotation) * (1 - Math.exp(-dt * 7));
     }
     if (home && port.scrollTop <= 8 && playable() && now >= armAfter && !dive && !wheelTail && !pointers.size) {
@@ -1212,9 +1273,10 @@
     if (wheelTail && now >= wheelTail.end && (now - wheelTail.last >= 200 || now >= wheelTail.until)) wheelTail = null;
     const sensorReady = !tiltEnabled || touch.active || keys.size ||
       (tiltHasReading && now - lastSensorAt <= 500);
-    if (playable() && sensorReady && port.scrollTop <= 8 && !dive && touchPreview === 0 && !multiTouch) {
-      game.step(dt, playerInput());
-    }
+    canStepGame = playable() && sensorReady && port.scrollTop <= 8 && !dive && touchPreview === 0 && !multiTouch;
+    appliedInput = canStepGame && game.state === 'balancing' ? playerInput() : 0;
+    if (canStepGame) game.step(dt, appliedInput);
+    if (game.state !== 'balancing') appliedInput = 0;
     const activeGame = home && port.scrollTop <= 8 && playable() && game.state !== 'ready';
     const cadence = underwater && !dive ? 1000 / 30 : 0;
     if (now - lastPaint >= cadence || !effectsEnabled()) {

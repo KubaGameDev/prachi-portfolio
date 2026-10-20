@@ -53,6 +53,27 @@
   }
 
   /**
+   * Advise a correction without changing the simulation. Input applies force,
+   * so recovery speed matters: release near center, or brake a fast overshoot.
+   * The renderer owns cue timing and whether the current game state shows it.
+   */
+  function getBalanceFeedback(lean, velocity, input) {
+    var tilt = finite(lean, 0);
+    var speed = finite(velocity, 0);
+    var correction = clamp(finite(input, 0), -1, 1);
+    var activeInput = Math.abs(correction) > 0.12;
+    var predicted = tilt + speed * 0.4;
+    var stable = Math.abs(tilt) < 0.16 && Math.abs(speed) < 0.18;
+    var recovering = tilt * speed < -0.025;
+    var heldCorrection = activeInput && tilt * correction < -0.02;
+
+    if (stable) return activeInput ? 'Ease off' : 'Steady';
+    if (recovering && heldCorrection && Math.abs(predicted) < 0.20) return 'Ease off';
+    if (Math.abs(predicted) > 0.18) return predicted > 0 ? 'Counter left' : 'Counter right';
+    return activeInput ? 'Ease off' : 'Steady';
+  }
+
+  /**
    * Screen-relative lateral tilt reconstructed from gravity, rather than raw
    * Euler gamma (which can change branches when a phone is nearly upright).
    * W3C Z-X'-Y'' orientation gives gravity's device components:
@@ -292,6 +313,7 @@
   return {
     BalanceGame: BalanceGame,
     getBalancePose: getBalancePose,
+    getBalanceFeedback: getBalanceFeedback,
     TiltInput: TiltInput,
     TouchIntent: TouchIntent,
     WheelIntent: WheelIntent,

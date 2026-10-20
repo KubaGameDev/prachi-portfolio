@@ -20,7 +20,7 @@ The sheet has four columns and three rows, with 362 × 362 cells. Read left to r
 
 | Frames (zero-based) | Use |
 | --- | --- |
-| 0–7 | Progressive swim stroke and recovery, looping at 10–16 fps by speed |
+| 0–7 | Progressive swim stroke and recovery, 1.15–1.85 cycles/second by speed |
 | 8 | Relaxed resting pose |
 | 9 | Upward glance / anticipation |
 | 10 | Downward glance / anticipation |
@@ -28,9 +28,12 @@ The sheet has four columns and three rows, with 362 × 362 cells. Read left to r
 
 Movement and visual sampling have separate clocks. The body moves every display frame,
 while the drawings advance at their own cadence. Pause freezes both. Mouse movements
-below 48px receive a glance; larger movements start a 280ms anticipation beat, then
+below 48px receive a glance; larger movements start a 440ms anticipation beat, then
 bounded spring movement. Repeated input while swimming updates the destination without
-restarting the anticipation. Scrolling produces a small current that returns to the same
+restarting the anticipation. A nearby glance holds for 620ms, and settling lasts at least
+380ms. The final 48% of anticipation has a small counter-motion that releases into
+the swim. Eight swim drawings use phase durations of 13%, 11%, 8%, 8%, 11%, 14%,
+17% and 18%, giving the fin push less time than the drifting recovery. Scrolling produces a small current that returns to the same
 resting height. Reduced motion suppresses decorative travel and breathing.
 
 Breathing is a 3.8-second authored timing curve: inhale 1.2s, hold .15s, exhale 1.8s,

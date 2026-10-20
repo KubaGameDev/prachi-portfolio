@@ -32,6 +32,48 @@ async function main() {
     document.body.classList.contains('ocean-companion-art-ready'));
   const screenshot = (page, name) => page.screenshot({ path: path.join(output, `${name}.png`) });
 
+  async function waterPixels(page) {
+    return page.evaluate(() => {
+      const canvas = document.querySelector('.ocean-surface-canvas');
+      const top = Math.floor(canvas.height * 0.56);
+      const height = Math.max(1, Math.floor(canvas.height * 0.38));
+      const data = canvas.getContext('2d').getImageData(0, top, canvas.width, height).data;
+      const samples = [];
+      // Sample only the painted water. Flo and DOM controls use other layers,
+      // so they cannot make this check pass while the water remains still.
+      for (let row = 0; row < 40; row++) {
+        const y = Math.min(height - 1, Math.floor((row + 0.5) / 40 * height));
+        for (let column = 0; column < 96; column++) {
+          const x = Math.floor(canvas.width * (0.04 + (column + 0.5) / 96 * 0.92));
+          const offset = (y * canvas.width + x) * 4;
+          samples.push(data[offset], data[offset + 1], data[offset + 2]);
+        }
+      }
+      return {
+        width: canvas.width, height: canvas.height,
+        time: performance.now(), samples, surf: Ocean.getSurfGeometry()
+      };
+    });
+  }
+
+  function waterDifference(before, after) {
+    assert.equal(after.width, before.width, 'water canvas width remains stable');
+    assert.equal(after.height, before.height, 'water canvas height remains stable');
+    let changed = 0, absoluteDifference = 0;
+    for (let i = 0; i < before.samples.length; i += 3) {
+      const difference = Math.abs(after.samples[i] - before.samples[i]) +
+        Math.abs(after.samples[i + 1] - before.samples[i + 1]) +
+        Math.abs(after.samples[i + 2] - before.samples[i + 2]);
+      if (difference >= 8) changed++;
+      absoluteDifference += difference;
+    }
+    return {
+      elapsedMs: after.time - before.time,
+      changedFraction: changed / (before.samples.length / 3),
+      meanChannelDifference: absoluteDifference / before.samples.length
+    };
+  }
+
   async function check(name, callback, options = {}) {
     if (filter && !name.toLowerCase().includes(filter.toLowerCase())) return;
     const context = await browser.newContext({
@@ -125,17 +167,19 @@ async function main() {
       `${label}: hesitation should precede vertical travel`);
     assert.ok(Math.abs(anticipation.targetY - targetY) <= 3,
       `${label}: pointer height establishes the destination`);
-    await page.waitForTimeout(110);
+    await page.waitForTimeout(240);
     const held = await companion(page);
     assert.equal(held.state, 'anticipating', `${label}: anticipation has a visible hold`);
     assert.ok(Math.abs(held.y - before.y) <= 8,
       `${label}: the visible hesitation is not already a swim`);
+    assert.ok(held.anticipation > anticipation.anticipation && held.anticipation < 1,
+      `${label}: anticipation progresses while Flo holds her position`);
 
     await page.waitForFunction(() => Ocean.getCompanion().state === 'swimming',
       null, { polling: 'raf', timeout: 1000 });
     const anticipationMs = Date.now() - started;
-    assert.ok(anticipationMs >= 180 && anticipationMs <= 850,
-      `${label}: hesitation should be about 280ms, observed ${anticipationMs}ms`);
+    assert.ok(anticipationMs >= 340 && anticipationMs <= 800,
+      `${label}: hesitation should be about 440ms, observed ${anticipationMs}ms`);
     await screenshot(page, `${label}-swimming`);
     await page.waitForFunction(() => {
       const actor = Ocean.getCompanion();
@@ -283,6 +327,80 @@ async function main() {
         ...(viewport.width <= 844 ? { isMobile: true, hasTouch: true, deviceScaleFactor: 1 } : {})
       });
     }
+
+    await check('wave surface water moves and freezes on pause', async page => {
+      await page.goto(base + '/index.html');
+      await ready(page);
+      await page.waitForFunction(() => document.body.classList.contains('ocean-balance-art-ready') &&
+        document.querySelector('.ocean-hero').classList.contains('is-armed'));
+      await page.waitForTimeout(180);
+      await screenshot(page, 'surface-water-live-a');
+      const before = await waterPixels(page);
+      await page.waitForTimeout(300);
+      const after = await waterPixels(page);
+      await screenshot(page, 'surface-water-live-b');
+      const difference = waterDifference(before, after);
+      assert.ok(difference.changedFraction >= 0.02,
+        'water travel should visibly change at least 2% of sampled water pixels in 300ms, got ' +
+        (difference.changedFraction * 100).toFixed(2) + '%');
+      assert.ok(difference.meanChannelDifference > 0.25,
+        'water travel should produce a visible pixel difference, got ' +
+        difference.meanChannelDifference.toFixed(3));
+      assert.ok(after.surf.travel > before.surf.travel,
+        'the water travel phase advances continuously');
+
+      await page.locator('#ocean-play').focus();
+      await page.keyboard.press('Enter');
+      await page.waitForTimeout(400);
+      const activeBefore = await waterPixels(page);
+      await screenshot(page, 'surface-water-active-a');
+      await page.waitForTimeout(300);
+      const activeAfter = await waterPixels(page);
+      await screenshot(page, 'surface-water-active-b');
+      const activeDifference = waterDifference(activeBefore, activeAfter);
+      assert.ok(activeAfter.surf.speed > after.surf.speed,
+        'balancing increases water travel speed over the idle drift');
+      assert.ok(activeDifference.changedFraction >= 0.02 &&
+        activeDifference.meanChannelDifference > 0.25,
+      'balancing keeps the moving water visible');
+
+      await page.locator('.ocean-motion-toggle').focus();
+      await page.keyboard.press('Enter');
+      await page.waitForFunction(() => Ocean.isPaused());
+      await page.waitForTimeout(80);
+      const frozen = await waterPixels(page);
+      await screenshot(page, 'surface-water-paused-a');
+      await page.waitForTimeout(300);
+      const still = await waterPixels(page);
+      await screenshot(page, 'surface-water-paused-b');
+      assert.deepEqual(still.samples, frozen.samples, 'Pause freezes every sampled water pixel');
+      assert.deepEqual(still.surf, frozen.surf, 'Pause freezes the wave geometry and travel phase');
+      notes.surfaceWater = {
+        live: difference, paused: waterDifference(frozen, still),
+        active: activeDifference,
+        beforeSurf: before.surf, afterSurf: after.surf, activeSurf: activeAfter.surf
+      };
+    });
+
+    await check('wave surface water stays fixed with reduced motion', async page => {
+      await page.goto(base + '/index.html');
+      await ready(page);
+      await page.waitForFunction(() => document.body.classList.contains('ocean-balance-art-ready'));
+      await page.waitForTimeout(200);
+      assert.equal(await page.evaluate(() => Ocean.effectsEnabled()), false);
+      const before = await waterPixels(page);
+      await screenshot(page, 'surface-water-reduced-a');
+      await page.waitForTimeout(300);
+      const after = await waterPixels(page);
+      await screenshot(page, 'surface-water-reduced-b');
+      assert.deepEqual(after.samples, before.samples,
+        'reduced motion holds every sampled water pixel fixed');
+      assert.deepEqual(after.surf, before.surf,
+        'reduced motion holds the wave geometry and travel phase fixed');
+      assert.equal(after.surf.speed, 0, 'reduced motion disables water travel speed');
+      assert.equal(after.surf.forwardLean, 0, 'reduced motion disables the forward lean');
+      notes.reducedWater = waterDifference(before, after);
+    }, { reducedMotion: 'reduce' });
 
     await check('desktop inner page follows cursor', async page => {
       await page.goto(`${base}/about.html`);

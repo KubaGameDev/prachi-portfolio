@@ -12,7 +12,7 @@
       <link rel="stylesheet" href="assets/css/41035204ceaa746ca7ffac7e9bb8c9d11782842589-89cfe22bd70e.css" type="text/css">
     <title>Prachi Gaur</title>
     <meta http-equiv="Content-Security-Policy" content="default-src 'self' data: blob:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; media-src 'self' blob:; connect-src 'none'; frame-src 'none'; form-action 'none'; object-src 'none'"><link rel="stylesheet" href="assets/css/local.css?v=20261020-1">
-    <link rel="stylesheet" href="assets/css/ocean.css?v=20261020-flo1"></head>
+    <link rel="stylesheet" href="assets/css/ocean.css?v=20261020-flo2"></head>
   <body data-ocean-home="true" class="transition-enabled">  <div class="page-background-video page-background-video-with-panel">
   </div>
   <div class="js-responsive-nav">
@@ -86,11 +86,20 @@
         <div><span class="ocean-stat-label">PERSONAL BEST</span><span class="ocean-stat-value"><output id="ocean-best">0.0</output><span class="ocean-stat-unit">s</span></span></div>
       </div>
       <div class="ocean-balance-row">
-        <span class="ocean-meter-label">BALANCE</span>
-        <div id="ocean-balance" class="ocean-balance" role="meter" aria-label="Mermaid balance" aria-valuemin="-100" aria-valuemax="100" aria-valuenow="0" aria-valuetext="Centered"><span class="ocean-balance-marker"></span></div>
+        <div class="ocean-balance-caption">
+          <span class="ocean-meter-label">BALANCE</span>
+          <span id="ocean-balance-description" class="ocean-balance-legend"><span class="ocean-legend-lean">Flo’s lean</span><span class="ocean-legend-input">Your correction</span></span>
+        </div>
+        <div id="ocean-balance" class="ocean-balance" role="meter" aria-label="Flo’s balance" aria-describedby="ocean-balance-description ocean-balance-cue" aria-valuemin="-100" aria-valuemax="100" aria-valuenow="0" aria-valuetext="Flo centered; your correction neutral">
+          <span class="ocean-balance-center" aria-hidden="true"></span>
+          <span class="ocean-balance-offset" aria-hidden="true"></span>
+          <span class="ocean-balance-marker" aria-hidden="true"></span>
+          <span class="ocean-input-marker" aria-hidden="true"></span>
+        </div>
+        <p id="ocean-balance-cue" class="ocean-balance-cue">Keep Flo centered</p>
       </div>
       <p id="ocean-status" class="ocean-status" role="status" aria-live="polite">A little left, a little right. Find your balance.</p>
-      <p id="ocean-instructions" class="ocean-instructions"><span class="ocean-desktop-instruction">Move your mouse to balance · ← → or A / D</span><span class="ocean-touch-instruction">Slide your thumb to balance · Swipe up firmly to dive</span></p>
+      <p id="ocean-instructions" class="ocean-instructions">Keep the gold dot near the center. The aqua ring shows your correction. Use small opposite corrections, then ease off. <span class="ocean-desktop-instruction">Move your mouse to balance · ← → or A / D</span><span class="ocean-touch-instruction">Slide your thumb to balance · Swipe up firmly to dive</span></p>
       <div class="ocean-game-actions">
         <button id="ocean-play" class="ocean-play" type="button">Play / resume <span aria-hidden="true">↗</span></button>
         <button id="ocean-help" class="ocean-play" type="button" aria-controls="ocean-input-guide" aria-expanded="false">How to play</button>
@@ -268,8 +277,8 @@
       </div>
     </div>
   </div>
-<script src="assets/js/ocean-core.js?v=20261020-surf2" defer></script>
-<script src="assets/js/flo-motion.js?v=20261020-flo1" defer></script>
-<script src="assets/js/ocean.js?v=20261020-flo1" defer></script>
+<script src="assets/js/ocean-core.js?v=20261020-flo2" defer></script>
+<script src="assets/js/flo-motion.js?v=20261020-flo2" defer></script>
+<script src="assets/js/ocean.js?v=20261020-surf3" defer></script>
 <script src="assets/js/local.js?v=20261020-ocean1" defer></script><script src="assets/js/cursor-trail.js?v=20261020-ocean1" defer></script></body>
 </html>
